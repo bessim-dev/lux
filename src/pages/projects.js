@@ -50,7 +50,7 @@ export function pageProjects() {
       })
       .join('')}
     </tbody></table></div>`;
-  return `<div class="page wide" style="max-width:1280px">
+  return `<div class="page wide">
     <div class="ph"><div><h1>Projects</h1><p>${visibleProjects().filter(p => p.status !== 'complete').length} active · ${visibleProjects().filter(p => p.status === 'complete').length} completed</p></div><div class="acts"><button class="btn btn-primary" data-a="newProject">${ic('plus', 14)}New project</button></div></div>
     <div class="row" style="margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div class="inwrap">${ic('search', 13)}<input class="input search-sm" id="proj-q" data-in="projQ" placeholder="Search projects" value="${esc(u.projQ || '')}" aria-label="Search projects"></div>

@@ -7,7 +7,7 @@ import { projectCard } from './projects.js';
 export function pageFavorites() {
   const ps = visibleProjects().filter(p => p.fav && canSee(p));
   const ts = allTasks().filter(t => t.fav);
-  return `<div class="page">
+  return `<div class="page wide">
     <div class="ph"><div><h1>Favorites</h1><p>Projects and tasks you've starred for quick access.</p></div></div>
     ${
       !ps.length && !ts.length
