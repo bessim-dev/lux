@@ -356,8 +356,10 @@ svg.logo {
 .drawer:focus {
   outline: none;
 }
+/* Content pages with a max width sit centred in the main area; full-bleed views use .page.flush. */
 .page {
   max-width: 1160px;
+  margin: 0 auto;
   padding: 28px var(--gutter) 72px;
 }
 .page.flush > .ph {
