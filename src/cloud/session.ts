@@ -3,6 +3,8 @@ import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { changes, dataSchema, entities, equal, type Data } from '../../shared/model';
 import { z } from 'zod';
+import { ConvexError } from 'convex/values';
+import type { PullRequestLinksState } from '../../shared/pull-requests';
 
 export interface Workspace {
   id: Id<'workspaces'>;
@@ -17,9 +19,12 @@ export interface Bridge {
   ready(): void;
   status(message: string, busy: boolean, error?: boolean): void;
   bind(controller: TeamSession): void;
+  pullRequests(state: PullRequestLinksState): void;
+  clearPullRequestDraft(task: string, expected: string): void;
 }
 const app = () => document.getElementById('app')!;
 const message = (error: unknown) => (error instanceof Error ? error.message : 'The request failed. Please try again.');
+const pullRequestMessage = (error: unknown) => (error instanceof ConvexError && typeof error.data === 'string' ? error.data : message(error));
 const normalize = (raw: unknown): Data => {
   const data = dataSchema.parse(raw);
   for (const p of data.projects) {
@@ -43,6 +48,9 @@ export class TeamSession {
   private generation = 0;
   private workspaces: Workspace[] = [];
   private pendingDraft: unknown = null;
+  private unsubscribePullRequests: (() => void) | null = null;
+  private pullRequestVersion = 0;
+  private pullRequestState: PullRequestLinksState = { task: null, links: [], canEdit: false, loading: false, busy: false, error: null };
   constructor(
     readonly client: ConvexClient,
     private bridge: Bridge,
@@ -232,6 +240,66 @@ export class TeamSession {
   }
   showError(error: unknown) {
     this.bridge.status(message(error), false, true);
+  }
+  private publishPullRequests(state: PullRequestLinksState) {
+    this.pullRequestState = state;
+    this.bridge.pullRequests(state);
+  }
+  watchPullRequestLinks(task: string | null) {
+    if (task !== this.pullRequestState.task) {
+      this.unsubscribePullRequests?.();
+      this.unsubscribePullRequests = null;
+      this.pullRequestVersion++;
+      this.publishPullRequests({ task, links: [], canEdit: false, loading: !!task, busy: false, error: null });
+    }
+    if (!task || !this.workspace || !this.baseline || this.unsubscribePullRequests) return;
+    // A newly created task must reach the backend before its links query starts.
+    if (!this.baseline.tasks.some(t => t.id === task)) return;
+    const version = this.pullRequestVersion;
+    const generation = this.generation;
+    // A cached query may notify synchronously and render again while subscribing.
+    this.unsubscribePullRequests = () => {};
+    const unsubscribe = this.client.onUpdate(
+      api.pullRequestLinks.list,
+      { workspace: this.workspace, task },
+      result => {
+        if (version !== this.pullRequestVersion || generation !== this.generation) return;
+        this.publishPullRequests({ ...this.pullRequestState, ...result, loading: false, error: null });
+      },
+      error => {
+        if (version !== this.pullRequestVersion || generation !== this.generation) return;
+        this.publishPullRequests({ task, links: [], canEdit: false, loading: false, busy: false, error: pullRequestMessage(error) });
+      },
+    );
+    if (version === this.pullRequestVersion && generation === this.generation) this.unsubscribePullRequests = unsubscribe;
+    else unsubscribe();
+  }
+  async addPullRequestLink(task: string, url: string) {
+    await this.changePullRequestLink(task, workspace => this.client.mutation(api.pullRequestLinks.add, { workspace, task, url }), url);
+  }
+  async removePullRequestLink(task: string, link: string) {
+    await this.changePullRequestLink(task, workspace => this.client.mutation(api.pullRequestLinks.remove, { workspace, task, link }));
+  }
+  private async changePullRequestLink(task: string, change: (workspace: Id<'workspaces'>) => Promise<unknown>, draft?: string) {
+    if (this.pullRequestState.task !== task || !this.pullRequestState.canEdit || this.pullRequestState.busy || this.pullRequestState.loading) return;
+    const version = this.pullRequestVersion;
+    const generation = this.generation;
+    const current = () => version === this.pullRequestVersion && generation === this.generation;
+    this.publishPullRequests({ ...this.pullRequestState, busy: true, error: null });
+    try {
+      if (this.timer) await this.flush();
+      if (!current()) return;
+      if (!this.workspace || this.failed || this.saving) throw new Error('Save or reload your task changes before editing pull request links.');
+      await change(this.workspace);
+      if (draft !== undefined && generation === this.generation) this.bridge.clearPullRequestDraft(task, draft);
+      if (!current()) return;
+      const result = await this.client.query(api.pullRequestLinks.list, { workspace: this.workspace, task });
+      if (current()) this.publishPullRequests({ ...this.pullRequestState, ...result, error: null });
+    } catch (error) {
+      if (current()) this.publishPullRequests({ ...this.pullRequestState, error: pullRequestMessage(error) });
+    } finally {
+      if (current()) this.publishPullRequests({ ...this.pullRequestState, busy: false });
+    }
   }
   async signOut() {
     if (this.timer) await this.flush();

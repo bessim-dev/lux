@@ -27,6 +27,18 @@ export function renderLayer() {
   return h;
 }
 
+export function renderPullRequests(taskId) {
+  const u = S.ui;
+  const prState =
+    u.pullRequestLinks?.task === taskId ? u.pullRequestLinks : { task: taskId, links: [], canEdit: false, loading: true, busy: false, error: null };
+  const prDraft = u.pullRequestDrafts?.[taskId] || '';
+  return `<div class="dsec prsec"><div class="dsec-h"><h3>Pull requests</h3><span class="cnt">${prState.loading ? 'Loading…' : prState.links.length}</span></div>
+        ${prState.error ? `<div class="alert danger" role="alert">${esc(prState.error)}</div>` : ''}
+        ${prState.loading ? '<p class="faint pr-empty">Loading pull requests…</p>' : prState.links.length ? `<div class="pr-list">${prState.links.map(link => `<div class="pr-link"><a id="pr-link-${esc(link.id)}" href="${esc(link.url)}" target="_blank" rel="noopener noreferrer" class="pr-anchor"><span class="pr-provider">${esc(link.provider === 'github' ? 'GitHub' : 'Forgejo')}</span><span class="trunc">${esc(link.host)}/${esc(link.owner)}/${esc(link.repository)}</span><span class="mono">#${esc(String(link.number))}</span></a>${prState.canEdit ? `<button class="ibtn ibtn-xs" id="pr-remove-${esc(link.id)}" data-a="removePullRequestLink" data-task="${esc(taskId)}" data-link="${esc(link.id)}" aria-label="Remove pull request link" ${prState.busy ? 'disabled' : ''}>${ic('x', 13)}</button>` : ''}</div>`).join('')}</div>` : '<p class="faint pr-empty">No pull requests linked.</p>'}
+        ${prState.canEdit ? `<form class="pr-form" data-submit="addPullRequestLink" data-task="${esc(taskId)}"><div class="grow"><label class="sr" for="pr-url-${esc(taskId)}">Pull request URL</label><input class="input" id="pr-url-${esc(taskId)}" name="url" data-in="pullRequestDraft" data-task="${esc(taskId)}" value="${esc(prDraft)}" placeholder="https://github.com/owner/repo/pull/42" aria-label="Pull request URL" ${prState.loading || prState.busy ? 'disabled' : ''}></div><button class="btn btn-primary btn-sm" id="pr-add-${esc(taskId)}" type="submit" ${prState.loading || prState.busy ? 'disabled' : ''}>Add link</button></form><p class="hint">GitHub and Forgejo PR URLs</p>` : ''}
+      </div>`;
+}
+
 /* ---------------- TASK DRAWER ---------------- */
 export function drawerHtml(t) {
   const p = proj(t.project);
@@ -91,6 +103,8 @@ export function drawerHtml(t) {
         </div></div>
         <div class="rte"><div class="rte-body" id="d-desc" contenteditable="true" data-rte="${t.id}" data-ph="Add a description…" role="textbox" aria-multiline="true" aria-labelledby="d-desc-l">${safeRichText(t.desc)}</div></div>
       </div>
+
+      ${renderPullRequests(t.id)}
 
       <div class="dsec"><div class="dsec-h"><h3>Subtasks</h3><span class="cnt num">${sd}/${t.subtasks.length}</span>${t.subtasks.length ? `<span style="width:90px;display:flex">${progBar(Math.round((sd / t.subtasks.length) * 100), sd === t.subtasks.length ? 'green' : '')}</span>` : ''}</div>
         ${t.subtasks.map(s => `<div class="subt ${s.done ? 'done' : ''}${fxc('added', s.id)}${fxc('done', s.id)}"><input type="checkbox" class="check" ${s.done ? 'checked' : ''} data-a="toggleSub" data-id="${t.id}" data-sid="${s.id}" aria-label="${s.done ? 'Reopen' : 'Complete'} subtask ${esc(s.title)}"><button class="s" data-a="openSub" data-id="${t.id}" data-sid="${s.id}">${esc(s.title)}</button>${s.due ? `<span class="due ${!s.done && diffD(parse(s.due), TODAY) < 0 ? 'over' : ''}">${ic('calendar', 12)}${relDate(s.due)}</span>` : ''}${s.assignee ? av(s.assignee, 'sm') : ''}<button class="ibtn ibtn-xs x" data-a="openSub" data-id="${t.id}" data-sid="${s.id}" aria-label="Open subtask details" tabindex="-1">${ic('chevron-right', 14)}</button></div>`).join('')}

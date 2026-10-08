@@ -50,6 +50,12 @@ Build the frontend with `npm run build` and host `dist/` with the two public Vit
 
 This first team version does not send notification emails/push notifications, migrate Plane data, process billing, support public share links, or move tasks between projects. Account security is managed by Clerk. Workspace deletion is disabled. The UI's Inbox/Notifications remain empty until notification delivery is implemented. Workspace-wide subscriptions and record comparison target small teams; pagination and finer subscriptions should precede large imports.
 
+## Integration planning
+
+Task drawers support adding, removing, and opening GitHub and Forgejo PR URL references. Links persist separately in Convex, follow workspace/project read and edit permissions, and are removed when their task or project is deleted. A task can have up to 50 links. These are URL references: Lux does not verify PR existence, fetch provider metadata, or sync review/CI status. Use HTTPS `github.com/owner/repo/pull/number` or `forgejo-host/owner/repo/pulls/number` URLs. Forgejo subpath installations and GitHub Enterprise URLs are not supported in this slice.
+
+The proposed shared MCP, CLI, thin Claude plugin, repository defaults, provider sync, and Plane migration are documented in [Agent access and Plane migration](docs/agent-integration-plan.md), [GitHub and Forgejo connections](docs/git-integration-plan.md), and [Research findings](docs/integration-research.md). Those integrations remain planned.
+
 ## Checks
 
 ```sh

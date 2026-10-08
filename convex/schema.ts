@@ -15,4 +15,19 @@ export default defineSchema({
   uploads: defineTable({ workspace: v.id('workspaces'), file: v.string(), storage: v.id('_storage'), by: v.string() })
     .index('by_workspace_file', ['workspace', 'file'])
     .index('by_storage', ['storage']),
+  pullRequestLinks: defineTable({
+    workspace: v.id('workspaces'),
+    project: v.string(),
+    task: v.string(),
+    provider: v.union(v.literal('github'), v.literal('forgejo')),
+    host: v.string(),
+    owner: v.string(),
+    repository: v.string(),
+    number: v.number(),
+    url: v.string(),
+    createdBy: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_task', ['workspace', 'task'])
+    .index('by_project', ['workspace', 'project']),
 });
