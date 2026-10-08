@@ -13,11 +13,10 @@ export async function identity(ctx: QueryCtx) {
 }
 export async function access(ctx: QueryCtx, workspace: Id<'workspaces'>) {
   const user = await identity(ctx);
-  const memberships = await ctx.db
+  const row = await ctx.db
     .query('memberships')
-    .withIndex('by_identity', q => q.eq('identity', user.tokenIdentifier))
-    .collect();
-  const row = memberships.find(m => m.workspace === workspace);
+    .withIndex('by_identity_workspace', q => q.eq('identity', user.tokenIdentifier).eq('workspace', workspace))
+    .unique();
   if (!row) return fail('You do not have access to this workspace.');
   const member = memberSchema.parse(JSON.parse(row.profile));
   return { user, row, member, admin: member.role === 'Owner' || member.role === 'Admin' };
@@ -54,14 +53,22 @@ export function projectOf(entity: Entity, items: Entity[]): Project | undefined 
   const projectId = pid?.kind === 'tasks' ? pid.value.project : 'project' in entity.value ? entity.value.project : null;
   return items.find((e): e is Extract<Entity, { kind: 'projects' }> => e.kind === 'projects' && e.value.id === projectId)?.value;
 }
+// Derived solely from validated stored entity data, never caller identity or permissions.
+export function agentMetadata(entity: Entity) {
+  return entity.kind === 'tasks'
+    ? { project: entity.value.project, taskKey: entity.value.key, status: entity.value.status, assignee: entity.value.assignee, searchText: entity.value.title }
+    : { project: undefined, taskKey: undefined, status: undefined, assignee: undefined, searchText: '' };
+}
 export async function put(ctx: MutationCtx, workspace: Id<'workspaces'>, entity: Entity) {
+  entity = entitySchema.parse(entity);
   const row = await ctx.db
     .query('entities')
     .withIndex('by_key', q => q.eq('workspace', workspace).eq('kind', entity.kind).eq('key', entity.value.id))
     .unique();
   const payload = JSON.stringify(entity);
-  if (row) await ctx.db.patch(row._id, { payload });
-  else await ctx.db.insert('entities', { workspace, kind: entity.kind, key: entity.value.id, payload });
+  const metadata = agentMetadata(entity);
+  if (row) await ctx.db.patch(row._id, { payload, ...metadata });
+  else await ctx.db.insert('entities', { workspace, kind: entity.kind, key: entity.value.id, payload, ...metadata });
 }
 export function decode(payload: string): Entity {
   return entitySchema.parse(JSON.parse(payload));

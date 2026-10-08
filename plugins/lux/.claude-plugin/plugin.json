@@ -1,0 +1,9 @@
+{
+  "name": "lux",
+  "displayName": "Lux",
+  "version": "0.0.1",
+  "description": "Read-only Lux project context for this repository, through the local lux MCP server.",
+  "author": { "name": "Reotech" },
+  "license": "UNLICENSED",
+  "keywords": ["lux", "mcp", "project-management"]
+}

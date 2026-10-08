@@ -54,7 +54,7 @@ This first team version does not send notification emails/push notifications, mi
 
 Task drawers support adding, removing, and opening GitHub and Forgejo PR URL references. Links persist separately in Convex, follow workspace/project read and edit permissions, and are removed when their task or project is deleted. A task can have up to 50 links. These are URL references: Lux does not verify PR existence, fetch provider metadata, or sync review/CI status. Use HTTPS `github.com/owner/repo/pull/number` or `forgejo-host/owner/repo/pulls/number` URLs. Forgejo subpath installations and GitHub Enterprise URLs are not supported in this slice.
 
-The proposed shared MCP, CLI, thin Claude plugin, repository defaults, provider sync, and Plane migration are documented in [Agent access and Plane migration](docs/agent-integration-plan.md), [GitHub and Forgejo connections](docs/git-integration-plan.md), and [Research findings](docs/integration-research.md). Those integrations remain planned.
+The read-only MCP foundation adds a reusable TypeScript package, local Lux connector, repository bindings, and a thin Claude plugin. See [MCP setup](docs/mcp-setup.md), [Shared package and authentication boundaries](docs/shared-mcp-foundation.md), and [Hosting findings](docs/mcp-hosting.md). Hosted Lux OAuth, write tools, provider sync, and Plane migration remain subsequent work in [Agent access and Plane migration](docs/agent-integration-plan.md), [GitHub and Forgejo connections](docs/git-integration-plan.md), and [Research findings](docs/integration-research.md).
 
 ## Checks
 

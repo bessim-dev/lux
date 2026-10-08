@@ -4,6 +4,9 @@
   "private": true,
   "description": "Lux: a calm, structured project management workspace.",
   "type": "module",
+  "bin": {
+    "lux": "agent/bin/lux.mjs"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -11,17 +14,27 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "mcp:kit:build": "tsc -p packages/mcp-kit/tsconfig.build.json",
+    "pretypecheck": "npm run mcp:kit:build",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run mcp:kit:build",
     "test": "vitest run",
-    "dev:backend": "convex dev"
+    "dev:backend": "convex dev",
+    "preagent:build": "npm run --silent mcp:kit:build",
+    "agent:build": "esbuild agent/main.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=agent/dist/lux.mjs --log-level=warning",
+    "mcp:server": "npm run --silent agent:build && node agent/bin/lux.mjs mcp",
+    "mcp:cli": "npm run --silent agent:build && node agent/bin/lux.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@modelcontextprotocol/client": "^2.3.1",
+    "@modelcontextprotocol/node": "^2.1.1",
     "@types/node": "^26.6.4",
     "convex-test": "^0.0.60",
+    "esbuild": "^0.25.12",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
     "lucide": "^0.460.0",
@@ -34,8 +47,12 @@
   "dependencies": {
     "@clerk/clerk-js": "^6.38.1",
     "@clerk/ui": "^1.39.1",
+    "@modelcontextprotocol/server": "^2.3.1",
     "convex": "^1.46.0",
     "dompurify": "^3.4.16",
     "zod": "^4.6.5"
-  }
+  },
+  "workspaces": [
+    "packages/*"
+  ]
 }
