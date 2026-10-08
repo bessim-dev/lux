@@ -5,6 +5,7 @@ import { S, save } from '../core/store.js';
 import { render } from '../shell/render.js';
 
 export function toast(msg, opt = {}) {
+  if (S.ui.teamReady && opt.action === 'Undo') opt = { ...opt, action: undefined, onAction: undefined };
   const host = $('#toasts');
   if (!host) return;
   const el = document.createElement('div');

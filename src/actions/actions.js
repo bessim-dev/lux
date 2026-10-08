@@ -131,6 +131,10 @@ export function snapshot() {
   return JSON.stringify(S.data);
 }
 export function restore(snap) {
+  if (S.ui.teamReady) {
+    toast('Undo is unavailable for shared changes.', { kind: 'info' });
+    return;
+  }
   S.data = JSON.parse(snap);
   save();
   render();
@@ -462,7 +466,7 @@ A.copyLink = el => {
           : d.id && proj(d.id)
             ? `project/${proj(d.id).key.toLowerCase()}`
             : '';
-  copy(`https://gr8rstudio.com/${D().ws.url}/${path}`);
+  copy(`${location.origin}/#${path}`);
 };
 A.copyText = el => copy(el.dataset.text, 'Copied to clipboard');
 A.copyEmail = el => {
@@ -549,10 +553,14 @@ A.newTask = el => {
     projectFromKey(S.ui.composer?.ctx) ||
     (S.ui.drawer && task(S.ui.drawer)?.project) ||
     visibleProjects().find(p => canSee(p) && p.status !== 'complete')?.id;
+  if (!pid) {
+    A.newProject();
+    return;
+  }
   S.ui.form = {
     title: '',
     desc: '',
-    project: canSee(proj(pid)) ? pid : 'p1',
+    project: pid,
     status: 'todo',
     assignee: d.assignee || D().me,
     priority: 'medium',
@@ -783,6 +791,7 @@ A.rmAttach = el => {
   const f = t.attachments.find(a => a.id === el.dataset.aid);
   mutate(() => {
     t.attachments = t.attachments.filter(a => a.id !== el.dataset.aid);
+    D().files = D().files.filter(file => file.id !== el.dataset.aid);
     logAct('removed a file from', t);
   });
   toast(`Removed ${f.name}`);
@@ -798,6 +807,7 @@ A.previewFile = el => {
   if (f) openModal({ type: 'filePreview', file: f, tid: f.task });
 };
 export function handleFiles(files, ctx) {
+  if (A.teamUpload) return A.teamUpload(files, ctx);
   if (!files || !files.length) return;
   if (S.ui.offline) {
     toast("Upload failed — you're offline.", { kind: 'err', action: 'Try again', onAction: () => {} });
@@ -1469,7 +1479,7 @@ A.shareInvite = () => {
   });
   S.ui.shareQ = '';
   render();
-  toast(`Invitation sent to ${v}`);
+  toast(`Access added for ${v}. Share the workspace link with them.`);
 };
 IN.sharePerm = el => {
   const p = proj(el.dataset.id);
@@ -1547,7 +1557,7 @@ A.submitInvite = () => {
     S.ui.modals.pop();
     S.ui.errors = {};
     render();
-    toast(`${list.length} invitation${list.length > 1 ? 's' : ''} sent`);
+    toast(`Access added for ${list.length} email address${list.length > 1 ? 'es' : ''}. Copy the workspace link and share it with them.`);
   });
 };
 A.copyInviteLink = () => copy(`https://gr8rstudio.com/join/${D().ws.url}-7f3k2`, 'Invite link copied');
@@ -1649,7 +1659,7 @@ A.delFile = el => {
       if (
         mutate(() => {
           D().files = D().files.filter(x => x !== f);
-          if (f.task && task(f.task)) task(f.task).attachments = task(f.task).attachments.filter(a => a.name !== f.name);
+          if (f.task && task(f.task)) task(f.task).attachments = task(f.task).attachments.filter(a => a.id !== f.id);
         })
       )
         toast(`Deleted ${f.name}`, { action: 'Undo', onAction: () => restore(snap) });

@@ -5,3 +5,6 @@ dist/
 __MACOSX/
 *.log
 .env*
+
+.convex/
+!.env.example

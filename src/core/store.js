@@ -1,7 +1,7 @@
 /* ---------- store ---------- */
 import { TODAY, diffD, iso, parse, uid } from './utils.js';
 import { PCOLORS, TEAMS_SEED } from './constants.js';
-import { seed } from '../data/seed.js';
+import { emptyData } from '../../shared/model.ts';
 
 export const STORE_KEY = 'gr8r.v2';
 export const DEFAULT_PREFS = {
@@ -19,24 +19,17 @@ export const DEFAULT_PREFS = {
   name: 'Tanjim Islam',
   title: 'Head of Product',
 };
-export function load() {
-  try {
-    const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const j = JSON.parse(raw);
-      if (j && j.data && j.data.tasks) return j;
-    }
-  } catch {
-    /* storage blocked or corrupt: start from seed data */
-  }
-  return null;
+export const saved = null;
+let saveHandler = () => {};
+export function setSaveHandler(handler) {
+  saveHandler = handler;
 }
-export const saved = load();
 export const S = {
-  data: saved?.data || seed(),
+  data: { ...emptyData(), workspaces: [], projOrder: [], notifs: [], sessions: [], invoices: [], notifPrefs: {}, recentSearches: [] },
   prefs: Object.assign({}, DEFAULT_PREFS, saved?.prefs || {}),
   views: saved?.views || {},
   ui: {
+    teamReady: false,
     fx: {},
     auth: null,
     authStep: 'login',
@@ -82,16 +75,8 @@ export const S = {
     drafts: {},
   },
 };
-export let _saveT;
 export function save() {
-  clearTimeout(_saveT);
-  _saveT = setTimeout(() => {
-    try {
-      localStorage.setItem(STORE_KEY, JSON.stringify({ data: S.data, prefs: S.prefs, views: S.views, collapsed: S.ui.collapsed }));
-    } catch {
-      /* storage full or blocked: keep working in memory */
-    }
-  }, 150);
+  if (S.ui.teamReady) saveHandler();
 }
 
 /* ---------- lookups ---------- */
@@ -106,7 +91,7 @@ export const visibleProjects = () =>
     .projOrder.map(proj)
     .filter(Boolean)
     .filter(p => !p.archived);
-export const canSee = p => !p.private || p.members.includes(D().me);
+export const canSee = p => !!p && (!(p.access === 'private' || (!p.access && p.private)) || p.members.includes(D().me));
 export const tasksOf = pid => D().tasks.filter(t => t.project === pid && !t.archived);
 export const allTasks = () => D().tasks.filter(t => !t.archived && canSee(proj(t.project)));
 export const isOver = t => t.due && t.status !== 'done' && diffD(parse(t.due), TODAY) < 0;

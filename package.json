@@ -1,8 +1,8 @@
 {
-  "name": "gr8r-studio",
+  "name": "lux",
   "version": "1.0.0",
   "private": true,
-  "description": "Gr8r Studio: a calm, structured project management workspace.",
+  "description": "Lux: a calm, structured project management workspace.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,17 +10,32 @@
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dev:backend": "convex dev"
   },
   "engines": {
     "node": ">=18"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.5",
+    "@types/node": "^26.6.4",
+    "convex-test": "^0.0.60",
     "eslint": "^9.39.5",
     "globals": "^15.15.0",
     "lucide": "^0.460.0",
     "prettier": "^3.9.9",
-    "vite": "^6.4.4"
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^6.4.4",
+    "vitest": "^5.0.3"
+  },
+  "dependencies": {
+    "@clerk/clerk-js": "^6.38.1",
+    "@clerk/ui": "^1.39.1",
+    "convex": "^1.46.0",
+    "dompurify": "^3.4.16",
+    "zod": "^4.6.5"
   }
 }
