@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 /* =====================================================================
    SHELL: render loop, router, sidebar, topbar, skeletons, filter engine
    ===================================================================== */
@@ -107,7 +108,7 @@ export function tryFocus(key) {
 }
 export function pageTitle() {
   const u = S.ui;
-  if (u.auth) return 'Gr8r Studio';
+  if (u.auth) return 'Lux';
   let t = ROUTE_NAMES[u.route] || 'Not found';
   if (u.route === 'project' && proj(u.params.id)) t = `${(PTABS.find(x => x[0] === u.params.tab) || [0, 'Saved view'])[1]} · ${proj(u.params.id).name}`;
   if (u.route === 'member' && mem(u.params.id)) t = mem(u.params.id).name;
@@ -123,6 +124,7 @@ export function makeFocusable() {
   }
 }
 export function render() {
+  if (!S.ui.teamReady) return;
   applyPrefs();
   const prevOv = render._ov || {};
   const ov = { pop: !!S.ui.pop, modals: S.ui.modals.length, drawer: S.ui.drawer, pal: !!S.ui.palette, sub: !!S.ui.subOpen };
@@ -150,8 +152,8 @@ export function render() {
     /* not supported here; safe to skip */
   }
   const keep = $$('[data-keep]').map(el => [el.dataset.keep, el.scrollTop, el.scrollLeft]);
-  $('#app').innerHTML = S.ui.auth ? renderAuth() : renderShell();
-  $('#layer').innerHTML = renderLayer();
+  $('#app').innerHTML = DOMPurify.sanitize(S.ui.auth ? renderAuth() : renderShell());
+  $('#layer').innerHTML = DOMPurify.sanitize(renderLayer());
   makeFocusable();
   keep.forEach(([k, t, l]) => {
     const el = document.querySelector(`[data-keep="${CSS.escape(k)}"]`);

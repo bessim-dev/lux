@@ -9,6 +9,7 @@ import { A, KEY } from './actions.js';
 
 export let gPending = 0;
 document.addEventListener('keydown', e => {
+  if (!S.ui.teamReady) return;
   const mod = e.metaKey || e.ctrlKey;
   const t = e.target;
   const typing = t.matches?.('input, textarea, select, [contenteditable="true"]');

@@ -16,3 +16,45 @@
 @import './pages/auth.css';
 @import './motion.css';
 @import './responsive.css';
+
+.team-gate {
+  max-width: 520px;
+  margin: 10vh auto;
+  padding: 32px;
+  display: grid;
+  gap: 20px;
+}
+.team-gate h1 {
+  font-size: 28px;
+  line-height: 1.2;
+}
+.team-gate p {
+  color: var(--text-2);
+  line-height: 1.6;
+}
+.team-gate form {
+  display: grid;
+  gap: 12px;
+}
+.team-sync {
+  position: fixed;
+  bottom: 12px;
+  right: 16px;
+  z-index: 10000;
+  font-size: 12px;
+  background: var(--bg, #fff);
+  border: 1px solid var(--divider, #ddd);
+  padding: 6px 12px;
+  border-radius: 8px;
+  max-width: min(560px, 90vw);
+}
+.team-sync:empty {
+  display: none;
+}
+.team-sync.error {
+  color: var(--red, #b42318);
+  padding: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
