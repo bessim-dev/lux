@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { mutation } from './_generated/server';
-import { access, allEntities, canEdit, canRead, decode, fail, projectOf, put } from './access';
+import { access, allEntities, canEdit, canRead, decode, fail, projectOf, put, requirePrivateProjectManager } from './access';
 import { entityKey, equal, memberSchema, type Entity } from '../shared/model';
 
 export const apply = mutation({
@@ -63,6 +63,10 @@ export const apply = mutation({
         if (entity.kind === 'projects' && !after && !admin && project.lead !== member.id) return fail('Only a project lead or admin can delete projects.');
       }
       if (after?.kind === 'projects') {
+        requirePrivateProjectManager(
+          after.value,
+          membershipRows.map(r => memberSchema.parse(JSON.parse(r.profile))),
+        );
         if (after.value.members.some(id => !memberIds.has(id)) || (after.value.lead && !memberIds.has(after.value.lead)))
           return fail('Project members must belong to this workspace.');
         if (next.some(e => e.kind === 'projects' && e.value.id !== after.value.id && e.value.key === after.value.key))
@@ -102,6 +106,10 @@ export const apply = mutation({
       }
       if (after?.kind === 'comments') {
         if (!before && after.value.by !== member.id) return fail('Comment author must be you.');
+        if (!before) {
+          if (Object.values(after.value.re).some(ids => ids.some(id => id !== member.id))) return fail('You can only add your own reactions.');
+          after.value.at = Date.now();
+        }
         if (before?.kind === 'comments' && (before.value.by !== after.value.by || before.value.at !== after.value.at || before.value.task !== after.value.task))
           return fail('Comment attribution cannot change.');
         if (before?.kind === 'comments') {
@@ -116,6 +124,7 @@ export const apply = mutation({
       }
       if (entity.kind === 'comments' && !after && entity.value.by !== member.id && !admin) return fail('You can only delete your own comments.');
       if (entity.kind === 'activity' && (before || entity.value.by !== member.id)) return fail('Activity records are append-only and attributed to you.');
+      if (after?.kind === 'activity') after.value.at = Date.now();
       if (entity.kind === 'files' && !before) return fail('Use the upload endpoint to add a file.');
       if (after?.kind === 'files' && before?.kind === 'files' && !equal({ ...before.value, name: after.value.name, type: after.value.type }, after.value))
         return fail('File associations cannot change.');

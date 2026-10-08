@@ -39,6 +39,15 @@ export function canEdit(project: Project, member: Member): boolean {
   if (permission) return permission === 'Can edit' || permission === 'Full access';
   return member.role !== 'Guest';
 }
+export function requirePrivateProjectManager(project: Project, members: Member[]) {
+  if (!(project.access === 'private' || (!project.access && project.private))) return;
+  const manager = members.some(
+    member =>
+      canEdit(project, member) &&
+      (member.role === 'Owner' || member.role === 'Admin' || project.lead === member.id || project.perms?.[member.id] === 'Full access'),
+  );
+  if (!manager) fail('Private projects must retain at least one member who can manage access. Assign a new lead before removing the last manager.');
+}
 export function projectOf(entity: Entity, items: Entity[]): Project | undefined {
   if (entity.kind === 'projects') return entity.value;
   const pid = entity.kind === 'comments' ? items.find(e => e.kind === 'tasks' && e.value.id === entity.value.task) : undefined;

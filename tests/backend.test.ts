@@ -62,6 +62,54 @@ function task(project: string, id = 'task1'): Task {
   };
 }
 describe('workspace authorization and persistence', () => {
+  test('prevents private project lockout through sharing changes or member removal', async () => {
+    const { t, owner, workspace, project } = await setup();
+    const invited = memberSchema.parse({
+      id: 'solo',
+      name: 'Solo',
+      email: 'solo@example.com',
+      role: 'Member',
+      team: '',
+      title: '',
+      c: '#123456',
+      status: 'invited',
+      last: null,
+      tz: '',
+    });
+    await owner.mutation(api.members.update, { workspace, before: null, after: JSON.stringify(invited) });
+    const hidden: Project = { ...project, access: 'private', members: ['solo'], lead: 'solo' };
+    await owner.mutation(api.entities.apply, { workspace, changes: [op({ kind: 'projects', value: project }, { kind: 'projects', value: hidden })] });
+    const solo = t.withIdentity(auth('solo'));
+    await solo.mutation(api.workspaces.acceptInvitations, {});
+    const snapshot = await solo.query(api.workspaces.snapshot, { workspace });
+    const profile = snapshot.members.find(m => m.id === 'solo')!;
+    await expect(owner.mutation(api.members.update, { workspace, before: JSON.stringify(profile), after: null })).rejects.toThrow('last manager');
+    await expect(
+      solo.mutation(api.entities.apply, {
+        workspace,
+        changes: [op({ kind: 'projects', value: hidden }, { kind: 'projects', value: { ...hidden, members: [] } })],
+      }),
+    ).rejects.toThrow('at least one');
+    const ownerId = snapshot.members.find(m => m.role === 'Owner')!.id;
+    const withViewer: Project = { ...hidden, members: ['solo', ownerId], perms: { [ownerId]: 'Can view' } };
+    await solo.mutation(api.entities.apply, { workspace, changes: [op({ kind: 'projects', value: hidden }, { kind: 'projects', value: withViewer })] });
+    await expect(owner.mutation(api.members.update, { workspace, before: JSON.stringify(profile), after: null })).rejects.toThrow('last manager');
+    await expect(
+      solo.mutation(api.entities.apply, {
+        workspace,
+        changes: [op({ kind: 'projects', value: withViewer }, { kind: 'projects', value: { ...withViewer, lead: null } })],
+      }),
+    ).rejects.toThrow('last manager');
+    expect((await solo.query(api.workspaces.snapshot, { workspace })).projects).toHaveLength(1);
+  });
+  test('rejects forged initial reactions and stamps comment time on the server', async () => {
+    const { owner, workspace, project, data } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    const comment = { id: 'comment1', task: 'task1', by: data.me, at: 1, text: 'Hello', re: { like: ['someoneElse'] } };
+    await expect(owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'comments', value: comment })] })).rejects.toThrow('own reactions');
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'comments', value: { ...comment, re: {} } })] });
+    expect((await owner.query(api.workspaces.snapshot, { workspace })).comments[0].at).toBeGreaterThan(1);
+  });
   test('rejects unauthenticated and unverified users; isolates workspaces', async () => {
     const { t, workspace } = await setup();
     await expect(t.query(api.workspaces.snapshot, { workspace })).rejects.toThrow();

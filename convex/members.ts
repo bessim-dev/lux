@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
 import { mutation } from './_generated/server';
-import { access, fail, allEntities, decode, put } from './access';
+import { access, fail, allEntities, decode, put, requirePrivateProjectManager } from './access';
 import { memberSchema, equal } from '../shared/model';
 
 export const update = mutation({
@@ -47,6 +47,12 @@ export const update = mutation({
           await put(ctx, args.workspace, entity);
         }
       }
+    }
+    const remainingMembers = rows.filter(r => r._id !== row?._id).map(r => memberSchema.parse(JSON.parse(r.profile)));
+    if (after) remainingMembers.push(after);
+    for (const record of await allEntities(ctx, args.workspace)) {
+      const entity = decode(record.payload);
+      if (entity.kind === 'projects') requirePrivateProjectManager(entity.value, remainingMembers);
     }
   },
 });

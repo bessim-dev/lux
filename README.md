@@ -44,6 +44,8 @@ Build the frontend with `npm run build` and host `dist/` with the two public Vit
 - Individual record changes are submitted transactionally with their previous values. Concurrent changes to different records survive. A stale edit to the same record is rejected; the UI offers an unsaved draft download before reloading. Edits pause briefly while a save is in flight.
 - Task identifiers are assigned on the server. File contents use Convex storage, with a 25 MB per-file limit. Create a task first, then attach files from its drawer. Download URLs are bearer URLs once issued; revoking membership blocks new URL requests, not a URL already copied.
 - Owner removal and ownership reassignment are blocked. Member removal revokes access and cleans project membership and assignments in one transaction.
+- Private projects must retain a member who can manage access. Reassign the lead before removing the last project manager from the workspace.
+- Activity descriptions are client-reported updates with server timestamps and authenticated attribution. The activity feed is not a security audit log.
 - Project/task deletion cleans associated records and stored files. Full-workspace undo is disabled because replaying browser snapshots would overwrite coworkers' work.
 
 This first team version does not send notification emails/push notifications, migrate Plane data, process billing, support public share links, or move tasks between projects. Account security is managed by Clerk. Workspace deletion is disabled. The UI's Inbox/Notifications remain empty until notification delivery is implemented. Workspace-wide subscriptions and record comparison target small teams; pagination and finer subscriptions should precede large imports.
