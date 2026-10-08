@@ -124,6 +124,7 @@ export class TeamSession {
     };
     section.append(signout);
     app().append(section);
+    this.bridge.status('', false);
   }
   async open(id: Id<'workspaces'>) {
     if (!this.workspaces.some(w => w.id === id)) throw new Error('Workspace unavailable.');
