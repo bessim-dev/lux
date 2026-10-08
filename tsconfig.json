@@ -12,5 +12,5 @@
     "types": ["vite/client", "node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["convex/**/*.ts", "shared/**/*.ts", "src/cloud/**/*.ts", "tests/**/*.ts"]
+  "include": ["convex/**/*.ts", "shared/**/*.ts", "src/cloud/**/*.ts", "tests/**/*.ts", "packages/*/src/**/*.ts", "agent/**/*.ts", "examples/**/*.ts"]
 }

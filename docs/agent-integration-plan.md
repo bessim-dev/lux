@@ -101,4 +101,4 @@ Run a resumable TypeScript job against source APIs/export and a restricted Lux i
 4. [Git repository bindings and manual PR linking](git-integration-plan.md), read mirrors, durable webhook/reconciliation processing, and optional lifecycle policy after shadow validation.
 5. Migration inventory, required model extensions, importer, staging rehearsal, scale checks for API and UI, then controlled data/automation cutover.
 
-This PR records the design and research, and implements manual task PR URL references in the browser and Convex. MCP, CLI/plugin access, repository grants, status sync, and migration remain future slices. It does not configure provider credentials, activate webhooks, install a plugin, or transfer production data.
+The initial integration PR recorded this design and implemented manual task PR URL references. The [shared MCP foundation](shared-mcp-foundation.md) adds indexed read operations and local MCP/CLI/plugin access with repository bindings. Hosted OAuth identity mapping, write tools, provider grants, status sync, and migration remain separate gates. No production migration or provider synchronization has been activated.

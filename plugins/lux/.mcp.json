@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "lux": {
+      "command": "lux",
+      "args": ["mcp", "--project-dir", "${CLAUDE_PROJECT_DIR}"],
+      "env": {
+        "LUX_CREDENTIAL_FILE": "${LUX_CREDENTIAL_FILE:-}"
+      }
+    }
+  }
+}
