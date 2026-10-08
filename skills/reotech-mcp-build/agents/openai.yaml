@@ -1,0 +1,3 @@
+interface:
+  display_name: 'Reotech MCP builder'
+  short_description: 'Build app MCPs with the shared Reotech kit'
