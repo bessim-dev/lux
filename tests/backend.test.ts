@@ -245,3 +245,158 @@ describe('shared files and identifiers', () => {
     expect((await owner.query(api.workspaces.snapshot, { workspace })).tasks[0].deps).toEqual([]);
   });
 });
+
+describe('pull request links', () => {
+  test('deduplicates canonical GitHub URLs and removes the canonical link', async () => {
+    const { owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+
+    const first = await owner.mutation(api.pullRequestLinks.add, {
+      workspace,
+      task: 'task1',
+      url: ' https://GitHub.com/Acme/Repo/pull/7/?tab=files#discussion ',
+    });
+    const second = await owner.mutation(api.pullRequestLinks.add, {
+      workspace,
+      task: 'task1',
+      url: 'https://github.com/acme/repo/pull/7#overview',
+    });
+    const listed = await owner.query(api.pullRequestLinks.list, { workspace, task: 'task1' });
+
+    expect(second).toBe(first);
+    expect(listed.links).toHaveLength(1);
+    expect(listed.links[0]).toMatchObject({
+      provider: 'github',
+      host: 'github.com',
+      owner: 'acme',
+      repository: 'repo',
+      number: 7,
+      url: 'https://github.com/acme/repo/pull/7',
+    });
+
+    await owner.mutation(api.pullRequestLinks.remove, { workspace, task: 'task1', link: listed.links[0].id });
+    expect((await owner.query(api.pullRequestLinks.list, { workspace, task: 'task1' })).links).toHaveLength(0);
+  });
+
+  test('keeps identical Forgejo references separate across hosts', async () => {
+    const { owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+
+    await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://git.one.test/Acme/Repo/pulls/8' });
+    await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://git.two.test/acme/repo/pulls/8/' });
+    const listed = await owner.query(api.pullRequestLinks.list, { workspace, task: 'task1' });
+
+    expect(listed.links).toHaveLength(2);
+    expect(new Set(listed.links.map(link => link.host))).toEqual(new Set(['git.one.test', 'git.two.test']));
+    expect(listed.links.every(link => link.provider === 'forgejo')).toBe(true);
+  });
+
+  test('isolates workspaces, tasks, and link ids', async () => {
+    const { t, owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, {
+      workspace,
+      changes: [op(null, { kind: 'tasks', value: task(project.id) }), op(null, { kind: 'tasks', value: task(project.id, 'task2') })],
+    });
+    const linkId = await owner.mutation(api.pullRequestLinks.add, {
+      workspace,
+      task: 'task1',
+      url: 'https://github.com/acme/repo/pull/11',
+    });
+    await expect(owner.mutation(api.pullRequestLinks.remove, { workspace, task: 'task2', link: linkId })).rejects.toThrow('unavailable');
+    expect((await owner.query(api.pullRequestLinks.list, { workspace, task: 'task1' })).links).toHaveLength(1);
+
+    const secondWorkspace = await owner.mutation(api.workspaces.create, { name: 'Other team' });
+    const secondData = await owner.query(api.workspaces.snapshot, { workspace: secondWorkspace });
+    const secondProject: Project = { ...project, id: 'other-project', key: 'OTHER', lead: secondData.me, members: [secondData.me] };
+    await owner.mutation(api.entities.apply, { workspace: secondWorkspace, changes: [op(null, { kind: 'projects', value: secondProject })] });
+    await owner.mutation(api.entities.apply, { workspace: secondWorkspace, changes: [op(null, { kind: 'tasks', value: task(secondProject.id) })] });
+    const secondLinkId = await owner.mutation(api.pullRequestLinks.add, {
+      workspace: secondWorkspace,
+      task: 'task1',
+      url: 'https://github.com/acme/other/pull/11',
+    });
+    await expect(owner.mutation(api.pullRequestLinks.remove, { workspace: secondWorkspace, task: 'task1', link: linkId })).rejects.toThrow('unavailable');
+    await expect(owner.mutation(api.pullRequestLinks.remove, { workspace, task: 'task1', link: secondLinkId })).rejects.toThrow('unavailable');
+    expect((await owner.query(api.pullRequestLinks.list, { workspace: secondWorkspace, task: 'task1' })).links).toHaveLength(1);
+    const links = await t.run(ctx => ctx.db.query('pullRequestLinks').collect());
+    expect(links.filter(link => link.workspace === workspace)).toHaveLength(1);
+    expect(links.filter(link => link.workspace === secondWorkspace)).toHaveLength(1);
+  });
+
+  test('allows private project members to read but blocks Can view mutations, then revokes access', async () => {
+    const { t, owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    const invited = memberSchema.parse({
+      id: 'viewer',
+      name: 'Viewer',
+      email: 'viewer@example.com',
+      role: 'Member',
+      team: '',
+      title: '',
+      c: '#123456',
+      status: 'invited',
+      last: null,
+      tz: '',
+    });
+    await owner.mutation(api.members.update, { workspace, before: null, after: JSON.stringify(invited) });
+    const viewer = t.withIdentity(auth('viewer'));
+    await viewer.mutation(api.workspaces.acceptInvitations, {});
+    const privateProject: Project = { ...project, access: 'private', members: [project.lead!, 'viewer'], perms: { viewer: 'Can view' } };
+    await owner.mutation(api.entities.apply, { workspace, changes: [op({ kind: 'projects', value: project }, { kind: 'projects', value: privateProject })] });
+    const link = await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://github.com/acme/private/pull/12' });
+
+    const visible = await viewer.query(api.pullRequestLinks.list, { workspace, task: 'task1' });
+    expect(visible.canEdit).toBe(false);
+    expect(visible.links).toHaveLength(1);
+    await expect(viewer.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://github.com/acme/private/pull/13' })).rejects.toThrow(
+      'permission',
+    );
+    await expect(viewer.mutation(api.pullRequestLinks.remove, { workspace, task: 'task1', link })).rejects.toThrow('permission');
+
+    const revokedProject: Project = { ...privateProject, members: [project.lead!], perms: {} };
+    await owner.mutation(api.entities.apply, {
+      workspace,
+      changes: [op({ kind: 'projects', value: privateProject }, { kind: 'projects', value: revokedProject })],
+    });
+    await expect(viewer.query(api.pullRequestLinks.list, { workspace, task: 'task1' })).rejects.toThrow('unavailable');
+  });
+
+  test('rejects unauthenticated and outsider access', async () => {
+    const { t, owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    await expect(t.query(api.pullRequestLinks.list, { workspace, task: 'task1' })).rejects.toThrow();
+    await expect(t.withIdentity(auth('outsider')).query(api.pullRequestLinks.list, { workspace, task: 'task1' })).rejects.toThrow('access');
+    await expect(
+      t.withIdentity(auth('outsider')).mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://github.com/a/b/pull/1' }),
+    ).rejects.toThrow('access');
+  });
+
+  test('deleting a task or project removes its link rows', async () => {
+    const { t, owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://github.com/acme/repo/pull/21' });
+    const current = (await owner.query(api.workspaces.snapshot, { workspace })).tasks[0];
+    await owner.mutation(api.entities.apply, { workspace, changes: [op({ kind: 'tasks', value: current }, null)] });
+    expect(await owner.query(api.workspaces.snapshot, { workspace })).toMatchObject({ tasks: [] });
+    expect(await t.run(ctx => ctx.db.query('pullRequestLinks').collect())).toHaveLength(0);
+
+    const secondProject: Project = { ...project, id: 'project2', key: 'SEC', name: 'Second project' };
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'projects', value: secondProject })] });
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(secondProject.id, 'task2') })] });
+    await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task2', url: 'https://github.com/acme/repo/pull/22' });
+    await owner.mutation(api.entities.apply, { workspace, changes: [op({ kind: 'projects', value: secondProject }, null)] });
+    expect(await t.run(ctx => ctx.db.query('pullRequestLinks').collect())).toHaveLength(0);
+  });
+
+  test('enforces the fifty-link task bound', async () => {
+    const { owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    for (let number = 1; number <= 50; number += 1) {
+      await owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: `https://github.com/acme/repo/pull/${number}` });
+    }
+    await expect(owner.mutation(api.pullRequestLinks.add, { workspace, task: 'task1', url: 'https://github.com/acme/repo/pull/51' })).rejects.toThrow(
+      'at most 50',
+    );
+    expect((await owner.query(api.pullRequestLinks.list, { workspace, task: 'task1' })).links).toHaveLength(50);
+  });
+});

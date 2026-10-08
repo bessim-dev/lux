@@ -1,7 +1,9 @@
 import { emptyData } from '../../shared/model.ts';
 import { S, D, setSaveHandler } from '../core/store.js';
 import { A, IN, copy } from '../actions/actions.js';
-import { render } from '../shell/render.js';
+import { render, setDrawerObserver, notifyDrawer, preparePullRequestAnchors } from '../shell/render.js';
+import { renderPullRequests } from '../overlays/drawer.js';
+import DOMPurify from 'dompurify';
 import { toast } from '../ui/toast.js';
 
 function status(message, busy, error = false) {
@@ -16,14 +18,19 @@ function status(message, busy, error = false) {
   host.className = error ? 'team-sync error' : 'team-sync';
   for (const id of ['app', 'layer']) document.getElementById(id).inert = busy;
 }
+let pullRequestFocus = null;
 function reset() {
   S.ui.teamReady = false;
+  notifyDrawer(null);
+  pullRequestFocus = null;
   S.data = { ...emptyData(), workspaces: [], projOrder: [], notifs: [], sessions: [], invoices: [], notifPrefs: {}, recentSearches: [] };
   S.ui.auth = null;
   S.ui.modals = [];
   S.ui.drawer = null;
   S.ui.palette = null;
   S.ui.pop = null;
+  S.ui.pullRequestLinks = { task: null, links: [], canEdit: false, loading: false, busy: false, error: null };
+  S.ui.pullRequestDrafts = {};
   document.getElementById('app').replaceChildren();
   document.getElementById('layer').replaceChildren();
   document.getElementById('toasts').replaceChildren();
@@ -76,6 +83,29 @@ export const bridge = {
   read: () => D(),
   apply,
   reset,
+  pullRequests(state) {
+    S.ui.pullRequestLinks = state;
+    const section = document.querySelector('.prsec');
+    if (!section || S.ui.drawer !== state.task) {
+      pullRequestFocus = null;
+      return;
+    }
+    const active = document.activeElement;
+    const focused = section.contains(active);
+    if (focused && active.id) pullRequestFocus = { task: state.task, id: active.id, start: active.selectionStart, end: active.selectionEnd };
+    // Subscription updates must not replace unrelated unsaved drawer inputs.
+    section.outerHTML = DOMPurify.sanitize(renderPullRequests(state.task));
+    preparePullRequestAnchors();
+    if (!state.busy && pullRequestFocus?.task === state.task && (focused || document.activeElement === document.body)) {
+      const control = document.getElementById(state.error ? 'pr-url-' + state.task : pullRequestFocus.id) || document.getElementById('pr-url-' + state.task);
+      control?.focus({ preventScroll: true });
+      if (control?.setSelectionRange && pullRequestFocus.start != null) control.setSelectionRange(pullRequestFocus.start, pullRequestFocus.end);
+    }
+    if (!state.busy) pullRequestFocus = null;
+  },
+  clearPullRequestDraft(task, expected) {
+    if (S.ui.pullRequestDrafts?.[task]?.trim() === expected.trim()) delete S.ui.pullRequestDrafts[task];
+  },
   status,
   ready() {
     if (!S.ui.teamReady) {
@@ -92,6 +122,7 @@ export const bridge = {
     render();
   },
   bind(session) {
+    setDrawerObserver(task => session.watchPullRequestLinks(task));
     setSaveHandler(() => {
       try {
         localStorage.setItem(
@@ -126,6 +157,16 @@ export const bridge = {
     A.previewFile = run(el => session.download(el.dataset.id));
     A.teamUpload = (files, ctx) => {
       void session.upload(files, ctx.project, ctx.task).catch(e => session.showError(e));
+    };
+    A.addPullRequestLink = run(form => {
+      const value = new FormData(form).get('url');
+      const urlValue = typeof value === 'string' ? value.trim() : '';
+      return session.addPullRequestLink(form.dataset.task, urlValue);
+    });
+    A.removePullRequestLink = run(el => session.removePullRequestLink(el.dataset.task, el.dataset.link));
+    IN.pullRequestDraft = el => {
+      S.ui.pullRequestDrafts ??= {};
+      S.ui.pullRequestDrafts[el.dataset.task] = el.value;
     };
     const unavailable = () => toast('This feature is not available in the team workspace yet.', { kind: 'info' });
     for (const name of [

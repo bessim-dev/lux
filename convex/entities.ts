@@ -139,6 +139,20 @@ export const apply = mutation({
     // Remove orphaned project/task children, including ones the stale client did not see.
     const deletedProjects = new Set(operations.filter(o => o.before?.kind === 'projects' && !o.after).map(o => o.before!.value.id));
     const deletedTasks = new Set(operations.filter(o => o.before?.kind === 'tasks' && !o.after).map(o => o.before!.value.id));
+    for (const project of deletedProjects) {
+      const links = await ctx.db
+        .query('pullRequestLinks')
+        .withIndex('by_project', q => q.eq('workspace', args.workspace).eq('project', project))
+        .collect();
+      for (const link of links) await ctx.db.delete(link._id);
+    }
+    for (const task of deletedTasks) {
+      const links = await ctx.db
+        .query('pullRequestLinks')
+        .withIndex('by_task', q => q.eq('workspace', args.workspace).eq('task', task))
+        .collect();
+      for (const link of links) await ctx.db.delete(link._id);
+    }
     for (const row of await allEntities(ctx, args.workspace)) {
       const e = decode(row.payload);
       const project = projectOf(e, current);

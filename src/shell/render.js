@@ -123,6 +123,20 @@ export function makeFocusable() {
     if (!el.hasAttribute('role')) el.setAttribute('role', el.dataset.a === 'go' ? 'link' : 'button');
   }
 }
+let drawerObserver = () => {};
+export function setDrawerObserver(observer) {
+  drawerObserver = observer;
+}
+export function notifyDrawer(task) {
+  drawerObserver(task);
+}
+export function preparePullRequestAnchors(root = document) {
+  // Restore new-tab behavior only for the server-validated PR reference anchors.
+  for (const link of root.querySelectorAll('.prsec a.pr-anchor')) {
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+  }
+}
 export function render() {
   if (!S.ui.teamReady) return;
   applyPrefs();
@@ -154,6 +168,7 @@ export function render() {
   const keep = $$('[data-keep]').map(el => [el.dataset.keep, el.scrollTop, el.scrollLeft]);
   $('#app').innerHTML = DOMPurify.sanitize(S.ui.auth ? renderAuth() : renderShell());
   $('#layer').innerHTML = DOMPurify.sanitize(renderLayer());
+  preparePullRequestAnchors();
   makeFocusable();
   keep.forEach(([k, t, l]) => {
     const el = document.querySelector(`[data-keep="${CSS.escape(k)}"]`);
@@ -195,6 +210,7 @@ export function render() {
     if (live && !S.ui.loading) live.textContent = title.split(' · ').slice(0, -1).join(', ');
   }
   afterRender();
+  notifyDrawer(ov.drawer || null);
 }
 export function afterRender() {
   selectMenu.close();

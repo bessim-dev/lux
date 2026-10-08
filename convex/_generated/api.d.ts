@@ -12,6 +12,7 @@ import type * as access from "../access.js";
 import type * as entities from "../entities.js";
 import type * as files from "../files.js";
 import type * as members from "../members.js";
+import type * as pullRequestLinks from "../pullRequestLinks.js";
 import type * as workspaces from "../workspaces.js";
 
 import type {
@@ -25,6 +26,7 @@ declare const fullApi: ApiFromModules<{
   entities: typeof entities;
   files: typeof files;
   members: typeof members;
+  pullRequestLinks: typeof pullRequestLinks;
   workspaces: typeof workspaces;
 }>;
 
