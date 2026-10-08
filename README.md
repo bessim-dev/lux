@@ -48,7 +48,11 @@ Build the frontend with `npm run build` and host `dist/` with the two public Vit
 - Activity descriptions are client-reported updates with server timestamps and authenticated attribution. The activity feed is not a security audit log.
 - Project/task deletion cleans associated records and stored files. Full-workspace undo is disabled because replaying browser snapshots would overwrite coworkers' work.
 
-This first team version does not send notification emails/push notifications, migrate Plane data, process billing, support public share links, or move tasks between projects. Account security is managed by Clerk. Workspace deletion is disabled. The UI's Inbox/Notifications remain empty until notification delivery is implemented. Workspace-wide subscriptions and record comparison target small teams; pagination and finer subscriptions should precede large imports.
+Inbox and Notifications persist assignments, comments, mentions, updates, read status, and preferences in Convex. Notification fanout runs in durable batches of 25 members. An optional outbox forwards events to the shared Reotech notification inbox. See [Team features and notification setup](docs/team-features.md).
+
+Tasks can move between projects with server-assigned destination keys. File duplication copies both metadata and storage bytes. Owners can delete a workspace after confirming its current name; access stops immediately and bounded jobs remove its data and files.
+
+Email/push delivery, Plane migration, billing transactions, and public share links remain unavailable. Account security is managed by Clerk. The legacy workspace overview still loads a snapshot and caps it at 5,000 records; entity edits cap membership at 500 and project catalog changes at 500 projects. Paginated project subscriptions must replace that overview before large imports. Notification history uses native pagination independently of the overview.
 
 ## Integration planning
 

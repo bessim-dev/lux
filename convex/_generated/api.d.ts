@@ -8,12 +8,14 @@
  * @module
  */
 
+import type * as access from "../access.js";
 import type * as agent from "../agent.js";
 import type * as agentIndex from "../agentIndex.js";
-import type * as access from "../access.js";
 import type * as entities from "../entities.js";
 import type * as files from "../files.js";
 import type * as members from "../members.js";
+import type * as notificationDelivery from "../notificationDelivery.js";
+import type * as notifications from "../notifications.js";
 import type * as pullRequestLinks from "../pullRequestLinks.js";
 import type * as workspaces from "../workspaces.js";
 
@@ -24,12 +26,14 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  access: typeof access;
   agent: typeof agent;
   agentIndex: typeof agentIndex;
-  access: typeof access;
   entities: typeof entities;
   files: typeof files;
   members: typeof members;
+  notificationDelivery: typeof notificationDelivery;
+  notifications: typeof notifications;
   pullRequestLinks: typeof pullRequestLinks;
   workspaces: typeof workspaces;
 }>;

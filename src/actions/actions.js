@@ -76,17 +76,18 @@ export function applyPatch(t, patch) {
       } else logAct('moved', t, `from ${ST[old].name} to ${ST[nv].name}`);
       if (nv === 'done' && t.recur && t.due) {
         const nd = iso(addD(parse(t.due), RECUR_DAYS[t.recur] || 7));
-        const n = createTask({
+        const next = {
           ...JSON.parse(JSON.stringify(t)),
-          id: undefined,
-          key: undefined,
           status: 'todo',
           due: nd,
           start: nd,
           subtasks: t.subtasks.map(s => ({ ...s, done: false })),
-          completedAt: null,
           attachments: [],
-        });
+        };
+        delete next.id;
+        delete next.key;
+        delete next.completedAt;
+        const n = createTask(next);
         delete n.prevStatus;
         msgs.push(`Next “${t.title}” scheduled for ${fmtDate(nd)}`);
       }
@@ -1416,7 +1417,9 @@ A.delProject = el => {
 };
 A.requestAccess = el => {
   const p = proj(el.dataset.id);
-  toast(`Access requested. We'll notify you when ${mem(p?.lead)?.name || 'the owner'} responds.`);
+  const owner = mem(p?.lead) || D().members.find(member => member.role === 'Owner');
+  if (owner?.email) copy(owner.email, 'Owner email copied. Contact them to request access.');
+  else toast('Ask your workspace owner to add you to this project.');
 };
 
 /* sharing & invites */
@@ -1688,6 +1691,7 @@ A.markAllRead = () => {
   render();
   if (n) toast("You're all caught up.");
 };
+A.loadMoreNotifications = () => toast('Older notifications are available through the connected workspace service.', { kind: 'info' });
 A.toggleUnreadOnly = () => {
   S.ui.inboxUnread = !S.ui.inboxUnread;
   render();
@@ -1777,6 +1781,7 @@ A.shortcuts = () => {
   S.ui.palette = null;
   openModal({ type: 'shortcuts' });
 };
+A.manageAccount = () => toast('Account security is managed by Clerk.', { kind: 'info' });
 A.startOnboarding = () => {
   S.ui.pop = null;
   S.ui.auth = 'onboarding';
@@ -1882,6 +1887,8 @@ IN.prefToggle = el => {
   S.prefs[el.dataset.k] = el.checked;
   save();
 };
+// Team notification bindings replace this local fallback. The UI contract is
+// intentionally limited to mention_all, assign_self, assign_status, and comment_all.
 IN.npToggle = el => {
   D().notifPrefs[el.dataset.k] = el.checked;
   save();
@@ -1922,22 +1929,28 @@ A.saveWorkspace = () => {
       toast('Workspace settings saved');
   });
 };
-A.delWorkspace = () =>
+export function confirmDeleteWorkspace(
+  onConfirmed = () => {
+    S.data = seed();
+    S.views = {};
+    save();
+    S.ui.auth = 'login';
+    render();
+    toast('Workspace deleted. Demo data was restored for this prototype.', { kind: 'info', ms: 5000 });
+  },
+) {
+  const name = D().ws.name;
   confirmDlg({
-    title: `Delete ${D().ws.name}?`,
+    title: `Delete ${name}?`,
     body: 'Every project, task, file, and comment in this workspace will be permanently deleted for all members.',
     ok: 'Delete workspace',
     danger: true,
-    typeName: D().ws.name,
-    run: () => {
-      S.data = seed();
-      S.views = {};
-      save();
-      S.ui.auth = 'login';
-      render();
-      toast('Workspace deleted. Demo data was restored for this prototype.', { kind: 'info', ms: 5000 });
-    },
+    typeName: name,
+    run: () => onConfirmed(name),
   });
+}
+A.confirmDeleteWorkspace = onConfirmed => confirmDeleteWorkspace(onConfirmed);
+A.delWorkspace = () => confirmDeleteWorkspace();
 A.avColor = el => {
   me().c = el.dataset.v;
   save();

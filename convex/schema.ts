@@ -3,7 +3,70 @@ import { v } from 'convex/values';
 
 export const kind = v.union(...(['projects', 'tasks', 'comments', 'activity', 'files', 'teams', 'events', 'savedViews'] as const).map(v.literal));
 export default defineSchema({
-  workspaces: defineTable({ name: v.string(), url: v.string(), c: v.string(), owner: v.string() }),
+  workspaces: defineTable({
+    name: v.string(),
+    url: v.string(),
+    c: v.string(),
+    owner: v.string(),
+    brand: v.optional(v.boolean()),
+    lifecycle: v.optional(v.literal('deleting')),
+  }),
+  notificationPreferences: defineTable({
+    workspace: v.id('workspaces'),
+    member: v.string(),
+    mentions: v.boolean(),
+    assignments: v.boolean(),
+    comments: v.boolean(),
+    updates: v.boolean(),
+    email: v.boolean(),
+    push: v.boolean(),
+    updatedAt: v.number(),
+  }).index('by_member_workspace', ['workspace', 'member']),
+  notificationEvents: defineTable({
+    workspace: v.id('workspaces'),
+    actor: v.string(),
+    actorName: v.string(),
+    before: v.union(v.string(), v.null()),
+    after: v.union(v.string(), v.null()),
+    cursor: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+  }).index('by_workspace', ['workspace']),
+  notificationOutbox: defineTable({
+    workspace: v.id('workspaces'),
+    notification: v.id('notifications'),
+    idempotencyKey: v.string(),
+    status: v.union(v.literal('pending'), v.literal('sent'), v.literal('failed')),
+    attempts: v.number(),
+    nextAttemptAt: v.number(),
+    scheduleToken: v.optional(v.string()),
+    lastError: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_workspace', ['workspace'])
+    .index('by_workspace_status', ['workspace', 'status'])
+    .index('by_notification', ['notification'])
+    .index('by_status', ['status', 'nextAttemptAt']),
+  notifications: defineTable({
+    workspace: v.id('workspaces'),
+    recipient: v.string(),
+    eventId: v.string(),
+    type: v.union(v.literal('mention'), v.literal('assign'), v.literal('comment'), v.literal('update')),
+    actor: v.optional(v.string()),
+    entityKind: v.optional(kind),
+    entityId: v.optional(v.string()),
+    project: v.optional(v.string()),
+    task: v.optional(v.string()),
+    title: v.string(),
+    body: v.string(),
+    readAt: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    dedupeKey: v.string(),
+  })
+    .index('by_workspace', ['workspace'])
+    .index('by_recipient', ['workspace', 'recipient', 'createdAt'])
+    .index('by_recipient_unread', ['workspace', 'recipient', 'readAt', 'createdAt'])
+    .index('by_dedupe', ['workspace', 'recipient', 'dedupeKey']),
   memberships: defineTable({ workspace: v.id('workspaces'), email: v.string(), identity: v.optional(v.string()), profile: v.string() })
     .index('by_identity', ['identity'])
     .index('by_identity_workspace', ['identity', 'workspace'])
@@ -29,7 +92,6 @@ export default defineSchema({
   })
     .index('by_workspace', ['workspace'])
     .index('by_key', ['workspace', 'kind', 'key'])
-    .index('by_workspace_kind', ['workspace', 'kind', 'key'])
     .index('by_project', ['workspace', 'kind', 'project', 'status', 'assignee'])
     .index('by_project_assignee', ['workspace', 'kind', 'project', 'assignee'])
     .index('by_task_key', ['workspace', 'kind', 'project', 'taskKey'])

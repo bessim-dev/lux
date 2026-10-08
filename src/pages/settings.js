@@ -5,7 +5,7 @@ import { dOff, esc, fmtDate } from '../core/utils.js';
 import { ic, wsLogo } from '../core/icons.js';
 import { D, S, me } from '../core/store.js';
 import { av, pIcon } from '../ui/helpers.js';
-import { permsTable, teamsGrid } from './members.js';
+import { teamsGrid } from './members.js';
 import { page404 } from './errors.js';
 import { SHORTCUTS } from '../overlays/modals.js';
 
@@ -35,6 +35,7 @@ export const SET_NAV = [
       ['notif-push', 'Push', 'smartphone'],
       ['notif-mentions', 'Mentions', 'at-sign'],
       ['notif-assign', 'Task assignments', 'user-check'],
+      ['notif-comments', 'Comments', 'message-square'],
     ],
   ],
   [
@@ -54,11 +55,11 @@ export const SET_NAV = [
     ],
   ],
   [
-    'Billing',
+    'Workspace access',
     [
-      ['plan', 'Plan', 'gem'],
-      ['payment', 'Payment', 'credit-card'],
-      ['invoices', 'Invoices', 'receipt'],
+      ['plan', 'Access overview', 'building-2'],
+      ['payment', 'Account', 'user-round'],
+      ['invoices', 'Billing status', 'receipt'],
     ],
   ],
 ];
@@ -74,6 +75,74 @@ export const sel = (k, opts, v) =>
       return `<option value="${val}" ${String(v) === String(val) ? 'selected' : ''}>${n}</option>`;
     })
     .join('')}</select>`;
+
+const deliveryStatus = message => `<div class="alert info" style="margin:18px 0">${ic('info', 15)}<span>${message}</span></div>`;
+
+const inAppNotificationLink = `<div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn btn-secondary btn-sm" data-a="go" data-r="settings" data-sec="notif-mentions">Mention preferences</button><button class="btn btn-secondary btn-sm" data-a="go" data-r="settings" data-sec="notif-assign">Assignment preferences</button><button class="btn btn-secondary btn-sm" data-a="go" data-r="settings" data-sec="notif-comments">Comment preferences</button></div>`;
+
+const boundedDeliveryCount = value => {
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.min(99999, Math.max(0, Math.floor(count))) : 0;
+};
+
+function notificationServiceCard() {
+  const service = S.ui.notificationDelivery;
+  const current = me();
+  const admin = current?.role === 'Owner' || current?.role === 'Admin';
+  const configured = service?.configured === true;
+  const pending = boundedDeliveryCount(service?.pending);
+  const failed = boundedDeliveryCount(service?.failed);
+  const sent = boundedDeliveryCount(service?.sent);
+  const retryable = configured && admin && pending + failed > 0;
+  const counts = configured
+    ? `<div class="row" style="gap:16px;flex-wrap:wrap;margin-top:12px;font-size:12px"><span><b class="num">${sent}</b> sent</span><span><b class="num">${pending}</b> pending</span><span><b class="num">${failed}</b> failed</span></div>${service?.hasMore ? '<p class="hint" style="margin-top:8px">More deliveries exist. Counts are capped at 500 per state.</p>' : ''}`
+    : '';
+  return `<div class="panel" style="padding:16px;margin:18px 0"><div class="row" style="align-items:flex-start;gap:10px"><div class="grow"><div class="eyebrow">Notification service</div><div style="font-weight:600;margin-top:4px">Lux inbox <span class="badge green" style="margin-left:4px">Always active</span></div><div class="muted" style="font-size:12.5px;margin-top:4px">In-app read status belongs to Lux. ${configured ? 'The shared Reotech notification inbox is configured; external delivery can still be delayed or fail.' : 'Lux keeps events in its own inbox while the shared Reotech notification service awaits setup.'}</div></div><span class="badge ${configured ? 'green' : 'amber'}">${configured ? 'Configured' : 'Waiting for setup'}</span></div>${counts}${retryable ? `<div style="margin-top:12px"><button class="btn btn-secondary btn-sm" data-a="retryNotificationDelivery">${ic('refresh-cw', 13)}Retry queued events</button></div>` : ''}</div>`;
+}
+
+function permissionSettings() {
+  const current = me();
+  const role = current?.role || 'Member';
+  const admin = role === 'Owner' || role === 'Admin';
+  const roleDescription = {
+    Owner: 'You own this workspace and can manage workspace settings, members, teams, and project access.',
+    Admin: 'You can manage workspace settings, members, teams, and project access.',
+    Member: 'You can work in projects you can access. Project leads and admins manage project access.',
+    Guest: 'You can open projects you are invited to. Commenting and editing follow each project’s access setting.',
+  }[role];
+  return `<h1>Workspace permissions</h1><p class="lead">These permissions are enforced by the workspace server and project access rules.</p>
+    <div class="panel" style="padding:18px;margin-top:18px"><div class="eyebrow">Your role</div><div class="row" style="gap:8px;margin-top:6px"><span class="badge accent">${esc(role)}</span><span class="muted">${esc(roleDescription)}</span></div></div>
+    <div class="sblock"><h2>Enforced access rules</h2><div class="col" style="gap:12px;margin-top:12px">
+      ${permissionRule('Workspace settings', admin ? 'Owner and Admin' : 'Owner and Admin only')}
+      ${permissionRule('Members and teams', admin ? 'Owner and Admin' : 'Owner and Admin only')}
+      ${permissionRule('Create a project', 'A non-guest member must be the project lead')}
+      ${permissionRule('Change project access', 'Workspace Admin, project lead, or project Full access')}
+      ${permissionRule('Delete a project', 'Workspace Admin or project lead')}
+      ${permissionRule('Edit tasks and add comments', 'Requires project access; Guests need an explicit project permission')}
+    </div></div>
+    <p class="hint">Public share links, billing limits, and workspace-wide policy toggles are not stored or enforced by the current backend.</p>
+    <div style="margin-top:14px"><button class="btn btn-secondary" data-a="go" data-r="members">Open member directory</button></div>`;
+}
+
+const permissionRule = (name, rule) =>
+  `<div class="srow" style="padding:0"><div><div class="t">${esc(name)}</div><div class="d">${esc(rule)}</div></div><span class="badge green">Enforced</span></div>`;
+
+function teamAccessBody(sec) {
+  const d = D();
+  const current = me();
+  const role = current?.role || 'Member';
+  if (sec === 'plan')
+    return `<h1>Workspace access</h1><p class="lead">Access is provided by workspace membership. Lux does not currently change plans or enforce usage tiers.</p>
+      <div class="panel" style="padding:18px;margin-top:18px"><div class="eyebrow">Current workspace</div><div style="font-size:20px;font-weight:600;margin-top:4px">${esc(d.ws.name)}</div><div class="muted" style="font-size:13px;margin-top:4px">${d.members.length} member${d.members.length === 1 ? '' : 's'} · Your role: <b>${esc(role)}</b></div></div>
+      <div class="row" style="margin-top:14px;gap:8px"><button class="btn btn-secondary" data-a="go" data-r="members">Manage members</button><button class="btn btn-secondary" data-a="go" data-r="settings" data-sec="permissions">View permissions</button></div>`;
+  if (sec === 'payment')
+    return `<h1>Account</h1><p class="lead">Sign-in, password, and multi-factor authentication are managed by Clerk.</p>
+      ${deliveryStatus('Workspace billing is not connected. Lux does not collect card details or create charges.')}
+      <button class="btn btn-primary" data-a="manageAccount">Manage Clerk account</button>`;
+  return `<h1>Billing status</h1><p class="lead">Billing and invoices are not connected to this workspace.</p>
+    ${deliveryStatus('No payment processor is configured, so Lux has no invoices or payment history to display.')}
+    <p class="hint">When billing is connected, this section can show processor supplied records without inventing plan, card, or invoice data.</p>`;
+}
 export function pageSettings() {
   const sec = S.ui.params.sec || S.ui.settings || 'appearance';
   const title = SET_NAV.flatMap(g => g[1]).find(x => x[0] === sec) || ['appearance', 'Appearance'];
@@ -83,15 +152,12 @@ export function pageSettings() {
   </div>`;
 }
 export function settingsBody(sec, title) {
-  if (['password', 'sessions', '2fa'].includes(sec))
+  if (S.ui.teamReady && ['password', 'sessions', '2fa'].includes(sec))
     return `<h1>Account security</h1><p class="lead">Manage your sign-in methods and account security.</p><button class="btn btn-primary" data-a="manageAccount">Manage account</button>`;
-  if (['plan', 'payment', 'invoices', 'notif-email', 'notif-push', 'notif-mentions', 'notif-assign'].includes(sec))
-    return `<h1>${esc(title)}</h1><p class="lead">This feature is not enabled for the team workspace.</p>`;
-  if (sec === 'permissions')
-    return `<h1>Workspace permissions</h1><p class="lead">Owners and admins manage members and teams. Members can create projects. Guests only access projects they are invited to. Project leads manage sharing; each project's access settings determine who can view, comment, or edit.</p>`;
+  if (S.ui.teamReady && ['plan', 'payment', 'invoices'].includes(sec)) return teamAccessBody(sec);
   const P = S.prefs;
   const d = D();
-  const np = d.notifPrefs;
+  const np = d.notifPrefs || {};
   const H = lead => `<h1>${title}</h1><p class="lead">${lead}</p>`;
   switch (sec) {
     case 'workspace':
@@ -158,21 +224,17 @@ export function settingsBody(sec, title) {
       );
     case 'language':
       return (
-        H('Language and regional formats.') +
-        srow(
-          'Language',
-          'The language used throughout the interface.',
-          sel('lang', ['English (US)', 'English (UK)', 'Deutsch', 'Español', 'Français', '日本語'], P.lang),
-        ) +
-        srow('Spellcheck', 'Check spelling in descriptions and comments.', tog('spell', P.spell !== false))
+        H('Lux is currently available in English.') +
+        srow('Interface language', 'Additional translations are not connected yet.', `<span class="badge">English</span>`) +
+        srow('Spellcheck', 'Spellcheck follows your browser and operating system settings.', `<span class="muted">Browser controlled</span>`)
       );
     case 'datetime':
       return (
-        H('How dates and times appear across the workspace.') +
+        H('How dates and times appear across the workspace. Date formatting is saved on this device.') +
         srow(
           'Time zone',
-          'Used for due dates and reminders.',
-          sel('tz', ['(GMT-08:00) Pacific Time', '(GMT-05:00) Eastern Time', '(GMT+00:00) London', '(GMT+01:00) Berlin', '(GMT+08:00) Singapore'], P.tz),
+          'Lux currently uses your browser time zone for dates and times.',
+          `<span class="muted">${esc(Intl.DateTimeFormat().resolvedOptions().timeZone || 'Browser time zone')}</span>`,
         ) +
         srow(
           'Date format',
@@ -201,18 +263,7 @@ export function settingsBody(sec, title) {
             P.weekStart,
           ),
         ) +
-        srow(
-          'Time format',
-          '',
-          sel(
-            'timeFmt',
-            [
-              ['12', '12-hour (2:30 PM)'],
-              ['24', '24-hour (14:30)'],
-            ],
-            P.timeFmt || '12',
-          ),
-        )
+        srow('Time format', 'Time display follows your browser locale.', `<span class="muted">Browser controlled</span>`)
       );
     case 'members':
       return (
@@ -246,42 +297,37 @@ export function settingsBody(sec, title) {
       );
     }
     case 'permissions':
-      return (
-        H('Control what each role can do.') +
-        srow('Members can create projects', '', tog('permCreate', P.permCreate !== false)) +
-        srow('Members can invite guests', 'Guests only see projects they are added to.', tog('permGuests', P.permGuests !== false)) +
-        srow('Allow public share links', 'Anyone with the link can view a project.', tog('permPublic', !!P.permPublic)) +
-        `<div class="sblock"><h2>Role permissions</h2><div style="margin-top:12px">${permsTable()}</div></div>`
-      );
+      return permissionSettings();
     case 'notif-email':
       return (
-        H('Choose which emails you receive.') +
-        srow('Mentions', 'When someone @mentions you.', tog('email_mention', np.email_mention, 'np')) +
-        srow('Assignments', 'When a task is assigned to you.', tog('email_assign', np.email_assign, 'np')) +
-        srow('Comments', 'On tasks you created or are assigned.', tog('email_comment', np.email_comment, 'np')) +
-        srow('Daily digest', 'A summary of what changed, every weekday at 8:00.', tog('email_digest', np.email_digest, 'np'))
+        H('Email delivery is not available in this workspace.') +
+        deliveryStatus('Lux currently delivers notifications in the in-app inbox. No email messages are sent from these settings.') +
+        inAppNotificationLink
       );
     case 'notif-push':
       return (
-        H('Notifications on desktop and mobile.') +
-        srow('Mentions', '', tog('push_mention', np.push_mention, 'np')) +
-        srow('Assignments', '', tog('push_assign', np.push_assign, 'np')) +
-        srow('Comments', '', tog('push_comment', np.push_comment, 'np')) +
-        srow('Due date reminders', 'One day before a task is due.', tog('push_due', np.push_due, 'np'))
+        H('Mobile push delivery is not available in this workspace.') +
+        deliveryStatus('Lux currently delivers notifications in the in-app inbox. No mobile push messages are sent from these settings.') +
+        inAppNotificationLink
       );
     case 'notif-mentions':
       return (
         H('Decide which mentions reach you.') +
-        srow('@mentions in comments and descriptions', '', tog('mention_all', np.mention_all, 'np')) +
-        srow('@team mentions', 'When your team is mentioned, e.g. @Product.', tog('mention_team', np.mention_team !== false, 'np')) +
-        srow('@workspace mentions', 'Announcements to everyone.', tog('mention_ws', !!np.mention_ws, 'np'))
+        notificationServiceCard() +
+        srow('@mentions in comments and descriptions', '', tog('mention_all', np.mention_all !== false, 'np'))
       );
     case 'notif-assign':
       return (
-        H('Updates about tasks assigned to you.') +
-        srow("When I'm assigned a task", '', tog('assign_self', np.assign_self, 'np')) +
-        srow('When my task changes status', '', tog('assign_status', np.assign_status !== false, 'np')) +
-        srow('When my task is overdue', '', tog('assign_over', np.assign_over !== false, 'np'))
+        H('Updates about tasks assigned to you and projects you can access.') +
+        notificationServiceCard() +
+        srow("When I'm assigned a task", '', tog('assign_self', np.assign_self !== false, 'np')) +
+        srow('Updates on followed projects and tasks', 'When an accessible project or task changes.', tog('assign_status', np.assign_status !== false, 'np'))
+      );
+    case 'notif-comments':
+      return (
+        H('Comments on tasks you can access.') +
+        notificationServiceCard() +
+        srow('Task comments', 'When a relevant task receives a comment.', tog('comment_all', np.comment_all !== false, 'np'))
       );
     case 'profile': {
       const err = S.ui.errors.pname2;
@@ -379,51 +425,11 @@ export function settingsBody(sec, title) {
             : `<div class="panel" style="padding:18px" ><div class="row" style="gap:14px;align-items:flex-start"><span class="ftype" style="--c:var(--amber);width:36px;height:36px">${ic('shield-alert', 18)}</span><div class="grow"><b>Two-factor authentication is off</b><p class="muted" style="margin:4px 0 12px;font-size:13px">Protect your account with a code from an authenticator app in addition to your password.</p><button class="btn btn-primary" data-a="setup2fa">Set up two-factor authentication</button></div></div></div>`)
       );
     case 'plan':
-      return (
-        H('Your subscription and usage.') +
-        `<div class="panel" style="padding:18px;margin-bottom:18px"><div class="row" style="flex-wrap:wrap"><div><div class="eyebrow">Current plan</div><div style="font-size:20px;font-weight:600;letter-spacing:-.015em;margin-top:4px">${esc(d.plan || 'Team')} <span class="muted" style="font-size:14px;font-weight:400">· $12 per member / month</span></div><div class="muted" style="font-size:13px">Renews ${fmtDate(dOff(7), true)} · Billed monthly</div></div><span class="sp"></span><button class="btn btn-secondary" data-a="go" data-r="settings" data-sec="invoices">View invoices</button></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:18px;margin-top:18px">${[
-        ['Members', d.members.length, 10, ''],
-        ['Storage', 12.4, 100, ' GB'],
-        ['Projects', d.projects.length, 50, ''],
-      ]
-        .map(
-          ([n, v, m, u]) =>
-            `<div><div class="row" style="font-size:12.5px;margin-bottom:6px"><span class="muted">${n}</span><span class="sp"></span><span class="num">${v}${u} of ${m}${u}</span></div><div class="meter"><i style="width:${(v / m) * 100}%;${v / m > 0.75 ? 'background:var(--amber)' : ''}"></i></div></div>`,
-        )
-        .join('')}</div></div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">${[
-        ['Free', '$0', ['Up to 3 members', 'Unlimited tasks', '5 GB storage']],
-        ['Team', '$12', ['Up to 50 members', 'Timelines & custom views', '100 GB storage', 'Guest access']],
-        ['Business', '$24', ['Unlimited members', 'Advanced permissions', 'SAML SSO', '1 TB storage']],
-      ]
-        .map(([n, pr, fs]) => {
-          const cur = (d.plan || 'Team') === n;
-          return `<div class="plan ${cur ? 'cur' : ''}"><div class="row"><b>${n}</b>${cur ? '<span class="badge accent">Current</span>' : ''}</div><div class="pr">${pr}<span class="muted" style="font-size:12.5px;font-weight:400"> /member/mo</span></div><ul>${fs.map(f => `<li>${ic('check', 13)}${f}</li>`).join('')}</ul><div style="margin-top:8px">${cur ? `<button class="btn btn-secondary btn-block" disabled>Current plan</button>` : `<button class="btn ${n === 'Business' ? 'btn-primary' : 'btn-secondary'} btn-block" data-a="changePlan" data-v="${n}">${n === 'Free' ? 'Downgrade' : 'Upgrade'}</button>`}</div></div>`;
-        })
-        .join('')}</div>`
-      );
+      return teamAccessBody('plan');
     case 'payment':
-      return (
-        H('Payment method and billing details.') +
-        srow(
-          `<span class="row" style="gap:10px"><span class="ftype" style="--c:var(--blue)">${ic('credit-card', 15)}</span>Visa ending in 4242</span>`,
-          'Expires 08/2028 · Default',
-          `<button class="btn btn-secondary btn-sm" data-a="toastInfo" data-msg="Card updates open in a secure payment window">Update</button>`,
-        ) +
-        srow('Billing email', 'Invoices and receipts are sent here.', `<span class="muted" style="user-select:all">hello@gr8rstudio.com</span>`) +
-        srow(
-          'Billing address',
-          '2150 Mission St, San Francisco, CA 94110',
-          `<button class="btn btn-secondary btn-sm" data-a="toastInfo" data-msg="Address editing opens in the billing portal">Edit</button>`,
-        ) +
-        srow('Tax ID', 'Shown on invoices', `<span class="muted">US EIN ••-•••4410</span>`)
-      );
+      return teamAccessBody('payment');
     case 'invoices':
-      return (
-        H('Past invoices for this workspace.') +
-        `<div class="panel" style="overflow-x:auto"><table class="perm-t" style="min-width:480px"><thead><tr><th style="padding-left:14px">Invoice</th><th style="text-align:left">Date</th><th style="text-align:left">Amount</th><th style="text-align:left">Status</th></tr></thead><tbody>${d.invoices.map(i => `<tr><td style="padding-left:14px" class="mono">${i.id}</td><td style="text-align:left" class="num">${fmtDate(i.date, true)}</td><td style="text-align:left" class="num">${i.amt}</td><td style="text-align:left"><span class="badge green">${ic('check', 11)}${i.st}</span></td></tr>`).join('')}</tbody></table></div>`
-      );
+      return teamAccessBody('invoices');
   }
   return page404();
 }

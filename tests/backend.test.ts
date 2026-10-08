@@ -62,6 +62,55 @@ function task(project: string, id = 'task1'): Task {
   };
 }
 describe('workspace authorization and persistence', () => {
+  test.each([false, true])('repairs allocation past task keys when a legacy counter lags (indexed: %s)', async indexed => {
+    const { t, owner, workspace, project } = await setup();
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id) })] });
+    await t.run(async ctx => {
+      const counter = await ctx.db
+        .query('counters')
+        .withIndex('by_project', q => q.eq('workspace', workspace).eq('project', project.id))
+        .unique();
+      if (!counter) throw new Error('Missing counter');
+      await ctx.db.patch(counter._id, { next: 200 });
+      if (indexed) await ctx.db.insert('agentIndexState', { name: 'tasks-v1', status: 'ready', cursor: null, processed: 1 });
+      else {
+        const row = await ctx.db
+          .query('entities')
+          .withIndex('by_key', q => q.eq('workspace', workspace).eq('kind', 'tasks').eq('key', 'task1'))
+          .unique();
+        if (!row) throw new Error('Missing legacy task');
+        await ctx.db.patch(row._id, { project: undefined, taskKey: undefined, status: undefined, assignee: undefined, searchText: undefined });
+      }
+    });
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: task(project.id, 'task2') })] });
+    expect((await owner.query(api.workspaces.snapshot, { workspace })).tasks.map(task => task.key).sort()).toEqual(['PRJ-201', 'PRJ-202']);
+  });
+
+  test('persists subtask details and server-allocates a moved task key', async () => {
+    const { owner, workspace, project, data } = await setup();
+    const destination: Project = { ...project, id: 'destination', key: 'DEST', name: 'Destination' };
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'projects', value: destination })] });
+    const source: Task = {
+      ...task(project.id),
+      subtasks: [{ id: 'subtask1', title: 'Detail', done: false, assignee: data.me, due: '2026-10-12', note: 'Acceptance criteria' }],
+    };
+    await owner.mutation(api.entities.apply, { workspace, changes: [op(null, { kind: 'tasks', value: source })] });
+    const persisted = (await owner.query(api.workspaces.snapshot, { workspace })).tasks[0];
+    expect(persisted.subtasks[0]).toMatchObject({ assignee: data.me, due: '2026-10-12', note: 'Acceptance criteria' });
+    await owner.mutation(api.entities.apply, {
+      workspace,
+      changes: [op({ kind: 'tasks', value: persisted }, { kind: 'tasks', value: { ...persisted, project: destination.id, key: 'DEST-client' } })],
+    });
+    const moved = (await owner.query(api.workspaces.snapshot, { workspace })).tasks[0];
+    expect(moved).toMatchObject({ project: destination.id, key: 'DEST-201', created: persisted.created });
+    await expect(
+      owner.mutation(api.entities.apply, {
+        workspace,
+        changes: [op({ kind: 'tasks', value: moved }, { kind: 'tasks', value: { ...moved, subtasks: [{ ...moved.subtasks[0], assignee: 'outsider' }] } })],
+      }),
+    ).rejects.toThrow('Subtask assignee');
+  });
+
   test('prevents private project lockout through sharing changes or member removal', async () => {
     const { t, owner, workspace, project } = await setup();
     const invited = memberSchema.parse({

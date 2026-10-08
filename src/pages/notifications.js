@@ -3,7 +3,7 @@ import { ago, dayBucket, esc } from '../core/utils.js';
 import { ic } from '../core/icons.js';
 import { D, S, proj, task } from '../core/store.js';
 import { empty, fmtComment } from '../ui/helpers.js';
-import { notifIcon, notifText } from './inbox.js';
+import { notifAt, notifContent, notifIcon, notifText, olderNotificationsButton } from './inbox.js';
 
 export function pageNotifications() {
   const f = S.ui.notifFilter;
@@ -13,7 +13,7 @@ export function pageNotifications() {
   const unread = ns.filter(n => !n.read).length;
   if (f === 'unread') ns = ns.filter(n => !n.read);
   const buckets = {};
-  ns.forEach(n => (buckets[dayBucket(n.at)] ||= []).push(n));
+  ns.forEach(n => (buckets[dayBucket(notifAt(n))] ||= []).push(n));
   return `<div class="page" style="max-width:820px">
     <div class="ph"><div><h1 class="row" style="gap:10px">Notifications ${unread ? `<span class="badge accent">${unread} unread</span>` : ''}</h1><p>Updates on tasks and projects you follow.</p></div>
       <div class="acts"><div class="seg">${[
@@ -34,14 +34,14 @@ export function pageNotifications() {
                     const t = n.task ? task(n.task) : null;
                     const p = n.project ? proj(n.project) : t ? proj(t.project) : null;
                     return `<div class="nrow ${n.read ? '' : 'unread'}" data-a="openNotif" data-id="${n.id}" role="button" tabindex="0">
-        ${notifIcon(n)}<div class="grow" style="font-size:13px"><div>${notifText(n)}</div><div class="muted trunc" style="font-size:12.5px;margin-top:2px">${fmtComment(n.snippet)}</div><div class="faint" style="font-size:11.5px;margin-top:4px">${p ? esc(p.name) + ' · ' : ''}${ago(n.at)}</div></div>
+        ${notifIcon(n)}<div class="grow" style="font-size:13px"><div>${notifText(n)}</div><div class="muted trunc" style="font-size:12.5px;margin-top:2px">${fmtComment(notifContent(n))}</div><div class="faint" style="font-size:11.5px;margin-top:4px">${p ? esc(p.name) + ' · ' : ''}${ago(notifAt(n))}</div></div>
         ${n.read ? '' : '<span style="width:7px;height:7px;border-radius:50%;background:var(--accent);margin-top:8px" aria-label="Unread"></span>'}
         <button class="ibtn ibtn-sm" data-a="toggleRead" data-id="${n.id}" data-tip="${n.read ? 'Mark as unread' : 'Mark as read'}" aria-label="Toggle read">${ic(n.read ? 'mail' : 'check', 14)}</button></div>`;
                   })
                   .join('')}</div>`,
             )
-            .join('')
-        : `<div class="panel">${empty('bell-off', "You're all caught up.", "No unread notifications. We'll let you know when something needs you.", `<button class="btn btn-secondary btn-sm" data-a="set" data-k="notifFilter" data-v="all">Show all</button>`)}</div>`
+            .join('') + olderNotificationsButton()
+        : `<div class="panel">${empty('bell-off', "You're all caught up.", "No unread notifications. We'll let you know when something needs you.", `<button class="btn btn-secondary btn-sm" data-a="set" data-k="notifFilter" data-v="all">Show all</button>`)}</div>${olderNotificationsButton()}`
     }
   </div>`;
 }

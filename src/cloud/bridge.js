@@ -29,8 +29,13 @@ function reset() {
   S.ui.drawer = null;
   S.ui.palette = null;
   S.ui.pop = null;
+  S.ui.route = 'home';
+  S.ui.params = {};
   S.ui.pullRequestLinks = { task: null, links: [], canEdit: false, loading: false, busy: false, error: null };
   S.ui.pullRequestDrafts = {};
+  S.ui.notificationHasMore = false;
+  S.ui.notificationLoading = false;
+  S.ui.notificationDelivery = null;
   document.getElementById('app').replaceChildren();
   document.getElementById('layer').replaceChildren();
   document.getElementById('toasts').replaceChildren();
@@ -55,10 +60,10 @@ function apply(data, workspaces) {
     ...data,
     workspaces,
     projOrder: [...order.filter(id => data.projects.some(p => p.id === id)), ...data.projects.map(p => p.id).filter(id => !order.includes(id))],
-    notifs: [],
+    notifs: sameUser ? D().notifs : [],
     sessions: [],
     invoices: [],
-    notifPrefs: {},
+    notifPrefs: sameUser ? D().notifPrefs : {},
     recentSearches: [],
   };
   for (const p of D().projects) {
@@ -106,16 +111,31 @@ export const bridge = {
   clearPullRequestDraft(task, expected) {
     if (S.ui.pullRequestDrafts?.[task]?.trim() === expected.trim()) delete S.ui.pullRequestDrafts[task];
   },
+  notifications(state) {
+    S.ui.notificationDelivery = state.delivery;
+    D().notifs = state.notifications.map(n => ({ ...n, by: n.actor, at: n.createdAt, read: n.readAt !== null, text: n.title, snippet: n.body }));
+    D().notifPrefs = {
+      mention_all: state.preferences.mentions,
+      assign_self: state.preferences.assignments,
+      comment_all: state.preferences.comments,
+      assign_status: state.preferences.updates,
+    };
+    S.ui.notificationHasMore = state.hasMore;
+    S.ui.notificationLoading = state.loading;
+    if (S.ui.teamReady) render();
+  },
   status,
   ready() {
     if (!S.ui.teamReady) {
       const [kind, key] = location.hash.slice(1).split('/');
       const task = kind === 'task' && D().tasks.find(t => t.key === key);
-      const project = task ? D().projects.find(p => p.id === task.project) : kind === 'project' && D().projects.find(p => p.key.toLowerCase() === key);
+      const file = kind === 'file' && D().files.find(f => f.id === key);
+      const project =
+        task || file ? D().projects.find(p => p.id === (task || file).project) : kind === 'project' && D().projects.find(p => p.key.toLowerCase() === key);
       if (project) {
         S.ui.route = 'project';
-        S.ui.params = { id: project.id, tab: 'board' };
-      }
+        S.ui.params = { id: project.id, tab: file ? 'files' : S.prefs.defaultTab || 'board' };
+      } else S.ui.route = ['home', 'mytasks', 'inbox'].includes(S.prefs.home) ? S.prefs.home : 'home';
       if (task) S.ui.drawer = task.id;
     }
     S.ui.teamReady = true;
@@ -148,9 +168,53 @@ export const bridge = {
           .catch(e => session.showError(e));
       };
     A.removeMember = run(el => session.removeMember(el.dataset.id));
+    A.delWorkspace = () => A.confirmDeleteWorkspace(run(name => session.deleteWorkspace(name)));
+    A.duplicateFile = run(el => session.duplicateFile(el.dataset.id));
+    A.loadMoreNotifications = () => session.loadMoreNotifications();
+    const selectNotification = (el, open) => {
+      const n = D().notifs.find(item => item.id === el.dataset.id);
+      if (!n) return;
+      run(() => session.setNotificationRead(n.id, true))();
+      if (open && n.task && D().tasks.some(t => t.id === n.task)) A.openTask({ dataset: { id: n.task } });
+      else if (open && n.project && D().projects.some(p => p.id === n.project)) A.go({ dataset: { r: 'project', id: n.project, tab: 'overview' } });
+      else {
+        S.ui.inboxSel = n.id;
+        render();
+      }
+    };
+    A.selNotif = el => selectNotification(el, false);
+    A.openNotif = el => selectNotification(el, true);
+    A.toggleRead = run(el => {
+      const n = D().notifs.find(item => item.id === el.dataset.id);
+      if (n) return session.setNotificationRead(n.id, !n.read);
+    });
+    A.markAllRead = run(() => session.markAllNotificationsRead());
+    A.retryNotificationDelivery = run(async () => {
+      const result = await session.retryNotificationDelivery();
+      if (!result) return;
+      toast(
+        result.configured
+          ? `${result.count} event${result.count === 1 ? '' : 's'} queued${result.hasMore ? '. More events remain; retry again after this batch.' : '.'}`
+          : 'The notification service needs server configuration.',
+        { kind: 'info' },
+      );
+    });
+    IN.npToggle = run(async el => {
+      const key = { mention_all: 'mentions', assign_self: 'assignments', comment_all: 'comments', assign_status: 'updates' }[el.dataset.k];
+      if (!key) return;
+      await session.saveNotificationPreferences({ [key]: el.checked });
+      toast('Notification preference saved', { ms: 1500 });
+    });
     A.signOut = run(() => session.signOut());
-    A.switchWs = A.newWorkspace = () => session.choose();
+    A.switchWs = run(el => session.switchWorkspace(el.dataset.v));
+    A.newWorkspace = () => session.choose();
     A.manageAccount = () => session.manageAccount();
+    A.requestAccess = el => {
+      const project = D().projects.find(project => project.id === el.dataset.id);
+      const owner = D().members.find(member => member.id === project?.lead) || D().members.find(member => member.role === 'Owner');
+      if (owner?.email) copy(owner.email, 'Owner email copied. Contact them to request access.');
+      else toast('Ask your workspace owner to add you to this project.', { kind: 'info' });
+    };
     A.copyInviteLink = A.resendInvite = () => copy(location.origin, 'Workspace link copied. Share it with the invited person.');
     A.downloadFile = run(el => session.download(el.dataset.id || el.dataset.aid));
     A.filePreview = run(el => session.download(el.dataset.aid));
@@ -174,10 +238,7 @@ export const bridge = {
       'toggleOffline',
       'retryOnline',
       'startOnboarding',
-      'delWorkspace',
       'changePlan',
-      'duplicateFile',
-      'requestAccess',
       'demoToast',
       'demoConfirm',
       'demoLoad',
