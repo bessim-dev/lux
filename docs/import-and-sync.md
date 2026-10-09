@@ -33,7 +33,19 @@ npm run integrations -- apply --plan /private/plane-plan.json --apply \
 
 Use the existing short-lived Clerk JWT credential format in [MCP setup](mcp-setup.md). A credential must match the requested instance. Normal browser identity and authorization apply. Deployment/admin keys are not user credentials.
 
-The slice imports projects, active endpoint work items, comments with mapped authors, labels, dates, descriptions as plain text, single assignees, and supported PR URL references. It retains rich descriptions/source fields in provenance. Custom workflow names are retained as `Imported state:` labels; started stages named review/validation map to Lux Review, and other groups map to their native equivalent. This does not reconstruct a custom workflow state machine. Cycles, modules, pages, custom fields, estimates, additional assignees, parent/dependency relationships, reactions, generic links, and attachment bytes are not reconstructed as native Lux features. Available cycles/modules/links/attachment metadata stay in the export. Archived-item and workspace-page inventory is not established by this exporter. Warnings describe encountered representational losses; absence of a warning does not prove full migration coverage.
+The slice imports projects, active endpoint work items, comments with mapped authors, labels, dates, descriptions as plain text, single assignees, and supported PR URL references. It retains rich descriptions/source fields in provenance. Custom workflow names are retained as `Imported state:` labels; started stages named review/validation map to Lux Review, and other groups map to their native equivalent. This does not reconstruct a custom workflow state machine. Cycles, modules, pages, custom fields, estimates, additional assignees, parent/dependency relationships, reactions, generic links, are not reconstructed as native Lux features. Available cycles/modules/links/attachment metadata stay in the export. Attachment bytes up to 25 MB can be copied in the separate file step below. Archived-item and workspace-page inventory is not established by this exporter. Warnings describe encountered representational losses; absence of a warning does not prove full migration coverage.
+
+## Plane attachment bytes
+
+After importing the core records, copy attachment bytes through the same native upload validation used by the web app:
+
+```sh
+npm run integrations -- plane-files --export /private/plane-export.json --apply \
+  --owner LUX_OWNER_MEMBER_ID --workspace WORKSPACE_ID \
+  --instance https://YOUR-DEPLOYMENT.convex.cloud --credential-file /private/lux-credential.json
+```
+
+`PLANE_API_KEY` stays in the environment. It is sent only to Plane's attachment-detail endpoint. The presigned redirect is fetched without Plane credentials. Downloads are bounded at 25 MB and compared with source sizes. Convex verifies the uploaded checksum and commits the file plus source mapping in one transaction; a download checksum verifies the finished copy. Retries skip intact mapped files and reject local changes/deletions. Unavailable source uploads and files over 25 MB are reported as skipped. File metadata records the actual importer and transfer time; source authors/timestamps remain in provenance. A failed upload before attachment can leave an unattached storage blob; no destination file is duplicated, and source data remains intact.
 
 ## GitHub commands
 

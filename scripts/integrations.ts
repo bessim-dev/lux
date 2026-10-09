@@ -7,6 +7,7 @@ import { makeFunctionReference } from 'convex/server';
 import { agentWorkspaceSchema } from '../shared/agent';
 import { importBatchSchema, type ImportBatch } from '../shared/imports';
 import { planeExportSchema, planeWorkspaceSchema, exportPlane, mapPlane } from './plane';
+import { importPlaneAttachments } from './attachments';
 import { exportGithub, mapGithubIssue } from './github';
 import { loadCredential } from '../agent/credentials';
 
@@ -107,6 +108,23 @@ async function main() {
       console.log(JSON.stringify({ repository: source.repository, issues: source.issues.length, plan: required('out') }));
       return;
     }
+    case 'plane-files': {
+      if (!values.apply) throw new Error('Add --apply after reviewing the completed export.');
+      const key = process.env.PLANE_API_KEY;
+      if (!key) throw new Error('PLANE_API_KEY must be set in the process environment.');
+      const input = planeExportSchema.parse(await json(required('export')));
+      const credential = await loadCredential(values['credential-file'], { allowLoopbackHttp: required('instance').startsWith('http://127.0.0.1:') });
+      if (credential.instance !== required('instance').replace(/\/$/, '')) throw new Error('Credential belongs to a different instance.');
+      const client = new ConvexHttpClient(credential.instance);
+      client.setAuth(credential.token);
+      const results = await importPlaneAttachments(input, key, required('workspace'), required('owner'), async (name, args) => {
+        return name === 'imports:fileStatus' || name === 'files:download'
+          ? client.query(makeFunctionReference<'query', Record<string, string>, unknown>(name), args)
+          : client.mutation(makeFunctionReference<'mutation', Record<string, string>, unknown>(name), args);
+      });
+      console.log(JSON.stringify({ files: results.length, results }));
+      return;
+    }
     case 'apply': {
       if (!values.apply) throw new Error('Review the plan, then add --apply to write it.');
       const plan = planSchema.parse(await json(required('plan')));
@@ -122,7 +140,7 @@ async function main() {
       return;
     }
     default:
-      throw new Error('Use plane-export, plane-plan, github-plan, or apply. See docs/import-and-sync.md.');
+      throw new Error('Use plane-export, plane-plan, plane-files, github-plan, or apply. See docs/import-and-sync.md.');
   }
 }
 if (process.argv[1]?.endsWith('integrations.mjs'))

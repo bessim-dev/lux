@@ -146,6 +146,46 @@ describe('repeatable imports', () => {
     await expect(owner.mutation(api.imports.apply, { workspace, batch: batch([duplicate]) })).rejects.toThrow('Project key');
     await expect(owner.mutation(api.imports.apply, { workspace, batch: batch([project, project]) })).rejects.toThrow('Duplicate source');
   });
+  test('attaches imported file bytes and provenance atomically, verifies checksums, and preserves local changes on retry', async () => {
+    const { t, owner, workspace, project, task, data } = await setup();
+    await owner.mutation(api.imports.apply, { workspace, batch: batch([project, task]) });
+    const storage = await t.run(ctx => ctx.storage.store(new Blob(['source file'], { type: 'text/plain' })));
+    const metadata = await t.run(ctx => ctx.db.system.get(storage));
+    if (!metadata) throw new Error('storage fixture');
+    const file = { id: 'plane_f_asset1', name: 'source.txt', type: 'file', size: '11 B', by: data.me, at: 1, project: 'p1', task: 't1' };
+    const args = {
+      workspace,
+      namespace: 'https://plane.reotech.org/alb',
+      sourceId: 'asset1',
+      storage,
+      file: JSON.stringify(file),
+      raw: '{"source":"Plane"}',
+      sha256: metadata.sha256,
+    };
+    await expect(owner.mutation(api.imports.attachFile, { ...args, sha256: 'wrong' })).rejects.toThrow('checksum');
+    expect((await owner.mutation(api.imports.attachFile, args)).status).toBe('created');
+    expect((await owner.mutation(api.imports.attachFile, args)).status).toBe('unchanged');
+    expect(
+      (await owner.query(api.imports.fileStatus, { workspace, namespace: args.namespace, sourceId: 'asset1', key: file.id, project: 'p1', task: 't1' })).status,
+    ).toBe('unchanged');
+    let snapshot = await owner.query(api.workspaces.snapshot, { workspace });
+    expect(snapshot.files).toHaveLength(1);
+    expect(snapshot.tasks[0]?.attachments).toHaveLength(1);
+    const current = snapshot.files[0]!;
+    await owner.mutation(api.entities.apply, {
+      workspace,
+      changes: [
+        {
+          before: JSON.stringify({ kind: 'files', value: current }),
+          after: JSON.stringify({ kind: 'files', value: { ...current, name: 'Local filename.txt' } }),
+        },
+      ],
+    });
+    await expect(owner.mutation(api.imports.attachFile, args)).rejects.toThrow('changed');
+    snapshot = await owner.query(api.workspaces.snapshot, { workspace });
+    expect(snapshot.files[0]?.name).toBe('Local filename.txt');
+    expect(await t.run(ctx => ctx.db.query('uploads').collect())).toHaveLength(1);
+  });
   test('GitHub issue pulls cannot alter projects', async () => {
     const { owner, workspace, project } = await setup();
     await expect(owner.mutation(api.imports.apply, { workspace, batch: batch([project], 'github') })).rejects.toThrow('projects');

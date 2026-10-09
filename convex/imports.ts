@@ -1,11 +1,12 @@
+import { finishUpload } from './files';
 import { v } from 'convex/values';
-import { mutation, type MutationCtx } from './_generated/server';
+import { mutation, query, type QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
 import { access, fail, decode, canEdit, put } from './access';
 import { importBatchSchema } from '../shared/imports';
-import { equal, memberSchema } from '../shared/model';
+import { equal, memberSchema, fileSchema } from '../shared/model';
 
-async function entityRow(ctx: MutationCtx, workspace: Id<'workspaces'>, kind: 'projects' | 'tasks' | 'comments', key: string) {
+async function entityRow(ctx: QueryCtx, workspace: Id<'workspaces'>, kind: 'projects' | 'tasks' | 'comments' | 'files', key: string) {
   return ctx.db
     .query('entities')
     .withIndex('by_key', q => q.eq('workspace', workspace).eq('kind', kind).eq('key', key))
@@ -132,5 +133,99 @@ export const apply = mutation({
       results.push({ sourceId: record.sourceId, key, status: unchanged ? 'unchanged' : current ? 'updated' : 'created' });
     }
     return results;
+  },
+});
+
+async function owner(ctx: QueryCtx, workspace: Id<'workspaces'>) {
+  const permission = await access(ctx, workspace);
+  const record = await ctx.db.get(workspace);
+  if (record?.owner !== permission.user.tokenIdentifier || permission.member.role !== 'Owner') return fail('Only the workspace owner can import.');
+  return permission;
+}
+const fileSourceArgs = { workspace: v.id('workspaces'), namespace: v.string(), sourceId: v.string(), key: v.string(), project: v.string(), task: v.string() };
+export const fileStatus = query({
+  args: fileSourceArgs,
+  handler: async (ctx, args) => {
+    const { member } = await owner(ctx, args.workspace);
+    const project = await entityRow(ctx, args.workspace, 'projects', args.project);
+    const entity = project ? decode(project.payload) : null;
+    if (entity?.kind !== 'projects' || !canEdit(entity.value, member)) return fail('Cannot import files into this project.');
+    const mapping = await ctx.db
+      .query('importRecords')
+      .withIndex('by_source', q =>
+        q.eq('workspace', args.workspace).eq('provider', 'plane').eq('namespace', args.namespace).eq('kind', 'files').eq('sourceId', args.sourceId),
+      )
+      .unique();
+    const row = await entityRow(ctx, args.workspace, 'files', args.key);
+    if (!mapping) return { status: row ? ('conflict' as const) : ('new' as const), sha256: null };
+    const current = row ? decode(row.payload) : null;
+    const imported = decode(mapping.appliedPayload);
+    if (imported.kind !== 'files' || imported.value.project !== args.project || imported.value.task !== args.task) return fail('Imported file is unavailable.');
+    const matches =
+      mapping.key === args.key &&
+      current?.kind === 'files' &&
+      current.value.project === args.project &&
+      current.value.task === args.task &&
+      equal(current, decode(mapping.appliedPayload));
+    return { status: matches ? ('unchanged' as const) : ('conflict' as const), sha256: mapping.sha256 ?? null };
+  },
+});
+export const attachFile = mutation({
+  args: {
+    workspace: v.id('workspaces'),
+    namespace: v.string(),
+    sourceId: v.string(),
+    storage: v.string(),
+    file: v.string(),
+    raw: v.string(),
+    sha256: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { member } = await owner(ctx, args.workspace);
+    if (
+      !['https://plane.reotech.org/reotech_internal', 'https://plane.reotech.org/alb'].includes(args.namespace) ||
+      args.sourceId.length > 160 ||
+      args.raw.length > 200000
+    )
+      return fail('Invalid file source.');
+    const file = fileSchema.parse(JSON.parse(args.file));
+    if (file.id !== `plane_f_${args.sourceId}` || !file.task) return fail('Invalid imported attachment identity.');
+    const mapping = await ctx.db
+      .query('importRecords')
+      .withIndex('by_source', q =>
+        q.eq('workspace', args.workspace).eq('provider', 'plane').eq('namespace', args.namespace).eq('kind', 'files').eq('sourceId', args.sourceId),
+      )
+      .unique();
+    const current = await entityRow(ctx, args.workspace, 'files', file.id);
+    const previous = current ? decode(current.payload) : null;
+    const projectRow = await entityRow(ctx, args.workspace, 'projects', previous?.kind === 'files' ? previous.value.project : file.project);
+    const project = projectRow ? decode(projectRow.payload) : null;
+    if (project?.kind !== 'projects' || !canEdit(project.value, member)) return fail('Cannot import files into this project.');
+    if (mapping) {
+      if (mapping.key === file.id && mapping.sha256 === args.sha256 && current && equal(decode(current.payload), decode(mapping.appliedPayload)))
+        return { status: 'unchanged' as const, key: file.id };
+      return fail('Imported file changed or was deleted. Review the conflict before retrying.');
+    }
+    if (current) return fail('An unmanaged file already uses this ID.');
+    const storage = ctx.db.system.normalizeId('_storage', args.storage);
+    const metadata = storage ? await ctx.db.system.get(storage) : null;
+    if (!metadata || metadata.sha256 !== args.sha256) return fail('Imported file checksum does not match the uploaded bytes.');
+    await finishUpload(ctx, { workspace: args.workspace, storage: args.storage, file: args.file });
+    const attached = await entityRow(ctx, args.workspace, 'files', file.id);
+    if (!attached) return fail('File attachment did not persist.');
+    await ctx.db.insert('importRecords', {
+      workspace: args.workspace,
+      provider: 'plane',
+      namespace: args.namespace,
+      sourceId: args.sourceId,
+      kind: 'files',
+      key: file.id,
+      sha256: metadata.sha256,
+      appliedPayload: attached.payload,
+      raw: args.raw,
+      importedBy: member.id,
+      importedAt: Date.now(),
+    });
+    return { status: 'created' as const, key: file.id };
   },
 });

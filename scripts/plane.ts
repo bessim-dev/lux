@@ -2,12 +2,17 @@ import { z } from 'zod';
 import { parsePullRequestUrl } from '../shared/pull-requests';
 import { importEntitySchema, type ImportBatch } from '../shared/imports';
 
+const sourceId = z
+  .string()
+  .min(1)
+  .max(160)
+  .regex(/^[A-Za-z0-9_-]+$/);
 const timestamp = z.string().nullable().optional();
 const reference = z.string().nullable().optional();
-const member = z.object({ id: z.string(), email: z.string(), first_name: z.string().optional(), last_name: z.string().optional() }).passthrough();
+const member = z.object({ id: sourceId, email: z.string(), first_name: z.string().optional(), last_name: z.string().optional() }).passthrough();
 const project = z
   .object({
-    id: z.string(),
+    id: sourceId,
     name: z.string(),
     identifier: z.string(),
     description: z.string().nullable().optional(),
@@ -15,11 +20,11 @@ const project = z
     archived_at: timestamp,
   })
   .passthrough();
-const state = z.object({ id: z.string(), name: z.string(), group: z.string() }).passthrough();
-const label = z.object({ id: z.string(), name: z.string() }).passthrough();
+const state = z.object({ id: sourceId, name: z.string(), group: z.string() }).passthrough();
+const label = z.object({ id: sourceId, name: z.string() }).passthrough();
 const task = z
   .object({
-    id: z.string(),
+    id: sourceId,
     name: z.string(),
     sequence_id: z.number().int().positive(),
     state: z.string(),
@@ -39,7 +44,7 @@ const task = z
   .passthrough();
 const comment = z
   .object({
-    id: z.string(),
+    id: sourceId,
     actor: z.string().nullable().optional(),
     created_by: reference,
     created_at: z.string(),
@@ -259,7 +264,7 @@ export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap
       if (source.assignees.length > 1) warnings.push(`${source.id}: additional assignees retained in provenance only.`);
       if (state.group === 'cancelled') warnings.push(`${source.id}: cancelled mapped to archived backlog.`);
       if (source.parent) warnings.push(`${source.id}: parent relationship retained in provenance only.`);
-      if (entry.attachments.length) warnings.push(`${source.id}: ${entry.attachments.length} attachments retained in export only.`);
+      if (entry.attachments.length) warnings.push(`${source.id}: ${entry.attachments.length} attachments require the separate plane-files transfer.`);
       for (const link of entry.links) {
         const parsed = z.object({ url: z.string() }).parse(link);
         try {
