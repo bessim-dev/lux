@@ -160,6 +160,7 @@ export async function exportPlane(
       const attachments = await list(issuePath + task.id + (legacy ? '/issue-attachments/' : '/attachments/'));
       const links = await list(issuePath + task.id + '/links/');
       bundle.tasks.push({ task, comments, attachments, links });
+      completed.add(task.id);
       if (bundle.tasks.length % 10 === 0) {
         console.error(`${bundle.project.identifier}: exported ${bundle.tasks.length}/${tasks.length} items`);
         await checkpoint();

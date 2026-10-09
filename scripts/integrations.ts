@@ -1,4 +1,5 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, rename, unlink } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { parseArgs } from 'node:util';
 import { ConvexHttpClient } from 'convex/browser';
 import { z } from 'zod';
@@ -35,7 +36,16 @@ const required = (name: keyof typeof values) => {
   return value;
 };
 const json = async (path: string): Promise<unknown> => JSON.parse(await readFile(path, 'utf8'));
-const save = async (value: unknown) => writeFile(required('out'), JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+const save = async (value: unknown) => {
+  const path = required('out'),
+    temporary = `${path}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    await rename(temporary, path);
+  } finally {
+    await unlink(temporary).catch(() => undefined);
+  }
+};
 const importRef = makeFunctionReference<'mutation', { workspace: string; batch: string }, unknown>('imports:apply');
 const linkRef = makeFunctionReference<'mutation', { workspace: string; task: string; url: string }, unknown>('pullRequestLinks:add');
 const resultSchema = z.array(z.object({ sourceId: z.string(), key: z.string(), status: z.enum(['created', 'updated', 'unchanged', 'conflict']) }));
