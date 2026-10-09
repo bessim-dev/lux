@@ -23,7 +23,10 @@
     "preagent:build": "npm run --silent mcp:kit:build",
     "agent:build": "esbuild agent/main.ts --bundle --platform=node --format=esm --target=node20 --packages=external --outfile=agent/dist/lux.mjs --log-level=warning",
     "mcp:server": "npm run --silent agent:build && node agent/bin/lux.mjs mcp",
-    "mcp:cli": "npm run --silent agent:build && node agent/bin/lux.mjs"
+    "mcp:cli": "npm run --silent agent:build && node agent/bin/lux.mjs",
+    "integrations:build": "esbuild scripts/integrations.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=agent/dist/integrations.mjs",
+    "preintegrations": "npm run --silent mcp:kit:build && npm run --silent integrations:build",
+    "integrations": "node agent/dist/integrations.mjs"
   },
   "engines": {
     "node": ">=22"

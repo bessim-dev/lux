@@ -108,7 +108,7 @@ export const context = query({
     if (position !== null && (!anchor || anchor.workspace !== workspace || anchor.kind !== 'projects')) {
       return fail('AGENT_CURSOR_INVALID: The continuation anchor changed. Restart pagination.');
     }
-    const rows = ctx.db.query('entities').withIndex('by_workspace_kind', q => {
+    const rows = ctx.db.query('entities').withIndex('by_key', q => {
       const range = q.eq('workspace', workspace).eq('kind', 'projects');
       return anchor ? range.gt('key', anchor.key) : range;
     });
