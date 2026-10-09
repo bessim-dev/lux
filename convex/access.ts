@@ -13,6 +13,8 @@ export async function identity(ctx: QueryCtx) {
 }
 export async function access(ctx: QueryCtx, workspace: Id<'workspaces'>) {
   const user = await identity(ctx);
+  const ws = await ctx.db.get(workspace);
+  if (!ws || ws.lifecycle === 'deleting') return fail('Workspace no longer exists.');
   const row = await ctx.db
     .query('memberships')
     .withIndex('by_identity_workspace', q => q.eq('identity', user.tokenIdentifier).eq('workspace', workspace))
@@ -22,10 +24,19 @@ export async function access(ctx: QueryCtx, workspace: Id<'workspaces'>) {
   return { user, row, member, admin: member.role === 'Owner' || member.role === 'Admin' };
 }
 export async function allEntities(ctx: QueryCtx, workspace: Id<'workspaces'>) {
-  return ctx.db
+  const rows = await ctx.db
     .query('entities')
     .withIndex('by_workspace', q => q.eq('workspace', workspace))
-    .collect();
+    .take(5001);
+  if (rows.length > 5000)
+    return fail('This workspace exceeds the legacy overview limit of 5000 records. Use the paginated project APIs before importing more records.');
+  return rows;
+}
+export async function entityRow(ctx: QueryCtx, workspace: Id<'workspaces'>, kind: Entity['kind'], key: string) {
+  return ctx.db
+    .query('entities')
+    .withIndex('by_key', q => q.eq('workspace', workspace).eq('kind', kind).eq('key', key))
+    .unique();
 }
 export function canRead(project: Project, member: Member): boolean {
   if (member.role === 'Guest') return project.members.includes(member.id);

@@ -5,6 +5,15 @@ import { changes, dataSchema, entities, equal, type Data } from '../../shared/mo
 import { z } from 'zod';
 import { ConvexError } from 'convex/values';
 import type { PullRequestLinksState } from '../../shared/pull-requests';
+import { defaultNotificationPreferences, type Notification, type NotificationPreferences, type NotificationPreferencePatch } from '../../shared/notifications';
+
+export interface NotificationsState {
+  notifications: Notification[];
+  preferences: NotificationPreferences;
+  hasMore: boolean;
+  loading: boolean;
+  delivery: { configured: boolean; pending: number; failed: number; sent: number; hasMore: boolean } | null;
+}
 
 export interface Workspace {
   id: Id<'workspaces'>;
@@ -21,6 +30,7 @@ export interface Bridge {
   bind(controller: TeamSession): void;
   pullRequests(state: PullRequestLinksState): void;
   clearPullRequestDraft(task: string, expected: string): void;
+  notifications(state: NotificationsState): void;
 }
 const app = () => document.getElementById('app')!;
 const message = (error: unknown) => (error instanceof Error ? error.message : 'The request failed. Please try again.');
@@ -51,6 +61,14 @@ export class TeamSession {
   private unsubscribePullRequests: (() => void) | null = null;
   private pullRequestVersion = 0;
   private pullRequestState: PullRequestLinksState = { task: null, links: [], canEdit: false, loading: false, busy: false, error: null };
+  private notificationSubscriptions: (() => void)[] = [];
+  private notificationPageTokens: symbol[] = [];
+  private notificationPages: { notifications: Notification[]; cursor: string | null; isDone: boolean }[] = [];
+  private notificationPreferences: NotificationPreferences = defaultNotificationPreferences;
+  private unsubscribePreferences: (() => void) | null = null;
+  private unsubscribeDelivery: (() => void) | null = null;
+  private notificationDelivery: NotificationsState['delivery'] = null;
+  private notificationLoading = false;
   constructor(
     readonly client: ConvexClient,
     private bridge: Bridge,
@@ -77,6 +95,7 @@ export class TeamSession {
       return;
     }
     this.generation++;
+    this.stopNotifications();
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.workspace = null;
@@ -137,6 +156,7 @@ export class TeamSession {
   async open(id: Id<'workspaces'>) {
     if (!this.workspaces.some(w => w.id === id)) throw new Error('Workspace unavailable.');
     this.unsubscribe?.();
+    this.stopNotifications();
     this.workspace = id;
     this.baseline = null;
     this.failed = false;
@@ -157,11 +177,120 @@ export class TeamSession {
         this.showError(error);
       },
     );
+    this.watchNotificationPage(undefined, 0, generation);
+    this.unsubscribePreferences = this.client.onUpdate(
+      api.notifications.preferences,
+      { workspace: id },
+      preferences => {
+        if (generation !== this.generation) return;
+        this.notificationPreferences = preferences;
+        this.publishNotifications();
+      },
+      error => {
+        if (generation === this.generation) this.showError(error);
+      },
+    );
+    this.unsubscribeDelivery = this.client.onUpdate(
+      api.notificationDelivery.status,
+      { workspace: id },
+      delivery => {
+        if (generation !== this.generation) return;
+        this.notificationDelivery = delivery;
+        this.publishNotifications();
+      },
+      error => {
+        if (generation === this.generation) this.showError(error);
+      },
+    );
+  }
+  private stopNotifications() {
+    for (const stop of this.notificationSubscriptions) stop();
+    this.notificationSubscriptions = [];
+    this.notificationPageTokens = [];
+    this.notificationPages = [];
+    this.unsubscribePreferences?.();
+    this.unsubscribePreferences = null;
+    this.unsubscribeDelivery?.();
+    this.unsubscribeDelivery = null;
+    this.notificationDelivery = null;
+    this.notificationPreferences = defaultNotificationPreferences;
+    this.notificationLoading = false;
+  }
+  private publishNotifications() {
+    const byId = new Map(this.notificationPages.flatMap(page => page.notifications).map(notification => [notification.id, notification]));
+    this.bridge.notifications({
+      notifications: [...byId.values()].sort((a, b) => b.createdAt - a.createdAt),
+      preferences: this.notificationPreferences,
+      hasMore: this.notificationPages.at(-1)?.isDone === false,
+      loading: this.notificationLoading,
+      delivery: this.notificationDelivery,
+    });
+  }
+  private watchNotificationPage(cursor: string | undefined, index: number, generation: number) {
+    if (!this.workspace) return;
+    this.notificationLoading = true;
+    this.publishNotifications();
+    this.notificationSubscriptions[index] = () => {};
+    const token = Symbol();
+    this.notificationPageTokens[index] = token;
+    const stop = this.client.onUpdate(
+      api.notifications.list,
+      { workspace: this.workspace, limit: 50, ...(cursor ? { cursor } : {}) },
+      result => {
+        if (generation !== this.generation || this.notificationPageTokens[index] !== token) return;
+        // When a live page boundary shifts, discard later pages so no stale cursor can hide items.
+        const previous = this.notificationPages[index];
+        if (previous && previous.cursor !== result.page.cursor) {
+          for (const unsubscribe of this.notificationSubscriptions.splice(index + 1)) unsubscribe();
+          this.notificationPages.splice(index + 1);
+          this.notificationPageTokens.splice(index + 1);
+        }
+        this.notificationPages[index] = { notifications: result.notifications, ...result.page };
+        this.notificationLoading = false;
+        this.publishNotifications();
+      },
+      error => {
+        if (generation !== this.generation || this.notificationPageTokens[index] !== token) return;
+        this.notificationLoading = false;
+        this.publishNotifications();
+        this.showError(error);
+      },
+    );
+    if (generation === this.generation && this.notificationPageTokens[index] === token) this.notificationSubscriptions[index] = stop;
+    else stop();
+  }
+  loadMoreNotifications() {
+    const last = this.notificationPages.at(-1);
+    if (!last?.cursor || last.isDone || this.notificationLoading) return;
+    this.watchNotificationPage(last.cursor, this.notificationPages.length, this.generation);
+  }
+  async setNotificationRead(notification: string, read: boolean) {
+    if (!this.workspace) return;
+    await this.client.mutation(api.notifications.setRead, { workspace: this.workspace, notification, read });
+  }
+  async markAllNotificationsRead() {
+    if (!this.workspace) return;
+    const workspace = this.workspace;
+    const generation = this.generation;
+    const before = Date.now();
+    while (workspace === this.workspace && generation === this.generation) {
+      const result = await this.client.mutation(api.notifications.markAllRead, { workspace, before });
+      if (!result.hasMore) return;
+    }
+  }
+  async retryNotificationDelivery() {
+    if (!this.workspace) return;
+    return this.client.mutation(api.notificationDelivery.retryQueued, { workspace: this.workspace });
+  }
+  async saveNotificationPreferences(patch: NotificationPreferencePatch) {
+    if (!this.workspace) return;
+    await this.client.mutation(api.notifications.savePreferences, { workspace: this.workspace, ...patch });
   }
   private accept(raw: unknown) {
     const data = dataSchema.parse(raw);
     this.baseline = normalize(data);
     this.bridge.apply(data, this.workspaces);
+    this.publishNotifications();
     this.bridge.ready();
     this.bridge.status('All changes saved', false);
   }
@@ -305,12 +434,33 @@ export class TeamSession {
     if (this.timer) await this.flush();
     if (this.failed || this.saving) return;
     this.generation++;
+    this.stopNotifications();
     this.unsubscribe?.();
     this.bridge.reset();
     await this.logout();
   }
   manageAccount() {
     this.account();
+  }
+  async deleteWorkspace(name: string) {
+    await this.flush();
+    if (!this.workspace || this.failed || this.saving) return;
+    const workspace = this.workspace;
+    await this.client.mutation(api.workspaces.deleteWorkspace, { workspace, name });
+    this.workspaces = this.workspaces.filter(w => w.id !== workspace);
+    this.choose();
+  }
+  async switchWorkspace(id: string) {
+    await this.flush();
+    if (this.failed || this.saving) return;
+    const workspace = this.workspaces.find(w => w.id === id);
+    if (!workspace) throw new Error('Workspace unavailable. Reload the workspace list.');
+    await this.open(workspace.id);
+  }
+  async duplicateFile(file: string) {
+    await this.flush();
+    if (!this.workspace || this.failed || this.saving) return;
+    return this.client.action(api.files.duplicate, { workspace: this.workspace, file });
   }
   async removeMember(id: string) {
     await this.flush();

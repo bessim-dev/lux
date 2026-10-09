@@ -20,7 +20,7 @@ export const update = mutation({
     const current = row ? memberSchema.parse(JSON.parse(row.profile)) : null;
     if (!equal(before, current)) return fail('This member changed. Reload and try again.');
     if (!admin) {
-      if (!before || !after || id !== member.id || !equal({ ...before, name: after.name, title: after.title, tz: after.tz }, after))
+      if (!before || !after || id !== member.id || !equal({ ...before, name: after.name, title: after.title, tz: after.tz, c: after.c }, after))
         return fail('Only admins can manage members.');
     }
     if (before?.role === 'Owner' && (!after || after.role !== 'Owner')) return fail('The workspace owner cannot be removed or demoted.');

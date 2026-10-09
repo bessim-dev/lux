@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { icons as lucide } from 'lucide';
@@ -48,6 +48,7 @@ function lucideSubset() {
 }
 
 export default defineConfig({
+  test: { exclude: ['**/node_modules/**', '**/.worktrees/**', '**/dist/**'] },
   plugins: [lucideSubset()],
   server: { port: 5173 },
 });

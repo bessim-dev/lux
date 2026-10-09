@@ -3,7 +3,7 @@ import tseslint from 'typescript-eslint';
 import globals from 'globals';
 
 export default [
-  { ignores: ['**/dist/', 'convex/_generated/', '.convex/'] },
+  { ignores: ['**/dist/', 'convex/_generated/', '.convex/', '.worktrees/'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   { files: ['**/*.js'], rules: { '@typescript-eslint/no-unused-vars': 'off', 'no-unused-vars': 'error', '@typescript-eslint/no-unused-expressions': 'off' } },

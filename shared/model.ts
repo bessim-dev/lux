@@ -68,7 +68,7 @@ export const taskSchema = z.object({
   due: date,
   start: date,
   labels: z.array(text).max(100),
-  subtasks: z.array(z.object({ id, title: text, done: z.boolean() })).max(500),
+  subtasks: z.array(z.object({ id, title: text, done: z.boolean(), assignee: id.nullable().optional(), due: date.optional(), note: text.optional() })).max(500),
   attachments: z.array(attachmentSchema).max(100),
   deps: z.array(id).max(500),
   desc: z.string().max(100000),
