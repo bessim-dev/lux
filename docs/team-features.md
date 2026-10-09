@@ -73,7 +73,7 @@ owner and the exact current workspace name. One mutation sets the lifecycle and
 schedules cleanup. Access, workspace lists, and snapshots hide/reject deletion in
 progress. Each cleanup batch takes at most 50 rows from a workspace-indexed table,
 including events, inbox rows, preferences, outbox, uploads, entities, counters,
-PR links, and memberships. Upload storage is removed only after its last upload
+PR links, import provenance records, and memberships. Upload storage is removed only after its last upload
 reference disappears. The workspace row is removed after its tables are empty.
 No separate cleanup cursor/job table is needed because each batch deletes the
 first remaining indexed page.

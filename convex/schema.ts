@@ -67,6 +67,21 @@ export default defineSchema({
     .index('by_recipient', ['workspace', 'recipient', 'createdAt'])
     .index('by_recipient_unread', ['workspace', 'recipient', 'readAt', 'createdAt'])
     .index('by_dedupe', ['workspace', 'recipient', 'dedupeKey']),
+  importRecords: defineTable({
+    workspace: v.id('workspaces'),
+    provider: v.union(v.literal('plane'), v.literal('github')),
+    namespace: v.string(),
+    sourceId: v.string(),
+    kind: v.union(v.literal('projects'), v.literal('tasks'), v.literal('comments'), v.literal('files')),
+    sha256: v.optional(v.string()),
+    key: v.string(),
+    appliedPayload: v.string(),
+    raw: v.string(),
+    importedBy: v.string(),
+    importedAt: v.number(),
+  })
+    .index('by_source', ['workspace', 'provider', 'namespace', 'kind', 'sourceId'])
+    .index('by_workspace', ['workspace']),
   memberships: defineTable({ workspace: v.id('workspaces'), email: v.string(), identity: v.optional(v.string()), profile: v.string() })
     .index('by_identity', ['identity'])
     .index('by_identity_workspace', ['identity', 'workspace'])

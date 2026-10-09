@@ -169,7 +169,14 @@ export const bridge = {
       };
     A.removeMember = run(el => session.removeMember(el.dataset.id));
     A.delWorkspace = () => A.confirmDeleteWorkspace(run(name => session.deleteWorkspace(name)));
-    A.duplicateFile = run(el => session.duplicateFile(el.dataset.id));
+    const duplicateFile = run(async el => {
+      if (await session.duplicateFile(el.dataset.id)) toast('File duplicated');
+    });
+    A.dupFile = A.duplicateFile = el => {
+      S.ui.pop = null;
+      render();
+      duplicateFile(el);
+    };
     A.loadMoreNotifications = () => session.loadMoreNotifications();
     const selectNotification = (el, open) => {
       const n = D().notifs.find(item => item.id === el.dataset.id);

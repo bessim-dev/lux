@@ -170,6 +170,12 @@ export const cleanup = internalMutation({
     const workspace = await ctx.db.get(args.workspace);
     if (!workspace || workspace.lifecycle !== 'deleting') return { status: 'done' as const };
 
+    const importRecords = await ctx.db
+      .query('importRecords')
+      .withIndex('by_workspace', q => q.eq('workspace', args.workspace))
+      .take(CLEANUP_BATCH);
+    for (const row of importRecords) await ctx.db.delete(row._id);
+
     const notifications = await ctx.db
       .query('notifications')
       .withIndex('by_workspace', q => q.eq('workspace', args.workspace))
@@ -232,6 +238,10 @@ export const cleanup = internalMutation({
     for (const row of memberships) await ctx.db.delete(row._id);
 
     const pending =
+      (await ctx.db
+        .query('importRecords')
+        .withIndex('by_workspace', q => q.eq('workspace', args.workspace))
+        .first()) ||
       (await ctx.db
         .query('notifications')
         .withIndex('by_workspace', q => q.eq('workspace', args.workspace))

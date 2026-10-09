@@ -1,3 +1,4 @@
+import { repositoryUrlSchema } from '../../shared/repository.ts';
 /* =====================================================================
    ACTIONS · INPUT HANDLERS · DRAG & DROP · KEYBOARD · INIT
    ===================================================================== */
@@ -1222,7 +1223,7 @@ A.clearProjFilters = () => {
   render();
 };
 A.newProject = () => {
-  S.ui.pform = { name: '', desc: '', icon: 'folder', color: 'indigo', team: me().team, lead: D().me, due: dOff(30), tmpl: 'blank' };
+  S.ui.pform = { name: '', desc: '', repositoryUrl: '', icon: 'folder', color: 'indigo', team: me().team, lead: D().me, due: dOff(30), tmpl: 'blank' };
   S.ui.errors = {};
   S.ui.pop = null;
   openModal({ type: 'project' });
@@ -1230,7 +1231,17 @@ A.newProject = () => {
 A.editProject = el => {
   const p = proj(el.dataset.id);
   S.ui.pop = null;
-  S.ui.pform = { name: p.name, desc: p.desc, icon: p.icon, color: p.color, team: p.team, lead: p.lead, due: p.due, tmpl: 'blank' };
+  S.ui.pform = {
+    name: p.name,
+    desc: p.desc,
+    repositoryUrl: p.repositoryUrl || '',
+    icon: p.icon,
+    color: p.color,
+    team: p.team,
+    lead: p.lead,
+    due: p.due,
+    tmpl: 'blank',
+  };
   S.ui.errors = {};
   openModal({ type: 'project', edit: p.id });
 };
@@ -1271,6 +1282,7 @@ export function createProject(f, tmplId) {
     id: uid('p'),
     key: makeKey(f.name),
     name: f.name,
+    repositoryUrl: f.repositoryUrl || '',
     icon: f.icon,
     color: f.color,
     status: 'planning',
@@ -1306,6 +1318,15 @@ A.submitProject = () => {
   const f = S.ui.pform;
   f.name = ($('#p-name')?.value || '').trim();
   f.desc = $('#p-desc')?.value || '';
+  f.repositoryUrl = ($('#p-repository')?.value || '').trim();
+  const repository = repositoryUrlSchema.safeParse(f.repositoryUrl);
+  if (!repository.success) {
+    S.ui.errors.repository = repository.error.issues[0].message;
+    render();
+    $('#p-repository')?.focus();
+    return;
+  }
+  S.ui.errors.repository = null;
   if (!f.name) {
     S.ui.errors.pname = 'Give the project a name';
     render();
@@ -1319,6 +1340,7 @@ A.submitProject = () => {
         Object.assign(p, {
           name: f.name,
           desc: f.desc,
+          repositoryUrl: f.repositoryUrl,
           icon: f.icon,
           color: f.color,
           team: f.team,

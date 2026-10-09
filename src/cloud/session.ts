@@ -460,7 +460,7 @@ export class TeamSession {
   async duplicateFile(file: string) {
     await this.flush();
     if (!this.workspace || this.failed || this.saving) return;
-    await this.client.action(api.files.duplicate, { workspace: this.workspace, file });
+    return this.client.action(api.files.duplicate, { workspace: this.workspace, file });
   }
   async removeMember(id: string) {
     await this.flush();

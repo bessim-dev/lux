@@ -34,6 +34,20 @@ describe('workspace lifecycle', () => {
     const workspace = await owner.mutation(api.workspaces.create, { name: 'Team' });
     const storage = await t.run(ctx => ctx.storage.store(new Blob(['workspace file'], { type: 'text/plain' })));
     await t.run(async ctx => {
+      for (let i = 0; i < 75; i++) {
+        await ctx.db.insert('importRecords', {
+          workspace,
+          provider: 'plane',
+          namespace: 'cleanup-test',
+          sourceId: `source-${i}`,
+          kind: 'files',
+          key: `file-${i}`,
+          appliedPayload: '{}',
+          raw: '{}',
+          importedBy: 'owner',
+          importedAt: 1,
+        });
+      }
       await ctx.db.insert('entities', { workspace, kind: 'files', key: 'file1', payload: JSON.stringify({ kind: 'files', value: { id: 'file1' } }) });
       await ctx.db.insert('uploads', { workspace, file: 'file1', storage, by: 'owner' });
       await ctx.db.insert('counters', { workspace, project: 'project1', next: 2 });
@@ -106,6 +120,7 @@ describe('workspace lifecycle', () => {
     expect(await t.run(ctx => ctx.db.query('notifications').collect())).toHaveLength(0);
     expect(await t.run(ctx => ctx.db.query('notificationEvents').collect())).toHaveLength(0);
     expect(await t.run(ctx => ctx.db.query('notificationOutbox').collect())).toHaveLength(0);
+    expect(await t.run(ctx => ctx.db.query('importRecords').collect())).toHaveLength(0);
     expect(await t.run(ctx => ctx.storage.get(storage))).toBeNull();
   });
 

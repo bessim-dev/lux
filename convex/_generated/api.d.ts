@@ -13,6 +13,7 @@ import type * as agent from "../agent.js";
 import type * as agentIndex from "../agentIndex.js";
 import type * as entities from "../entities.js";
 import type * as files from "../files.js";
+import type * as imports from "../imports.js";
 import type * as members from "../members.js";
 import type * as notificationDelivery from "../notificationDelivery.js";
 import type * as notifications from "../notifications.js";
@@ -31,6 +32,7 @@ declare const fullApi: ApiFromModules<{
   agentIndex: typeof agentIndex;
   entities: typeof entities;
   files: typeof files;
+  imports: typeof imports;
   members: typeof members;
   notificationDelivery: typeof notificationDelivery;
   notifications: typeof notifications;

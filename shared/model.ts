@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { repositoryUrlSchema } from './repository';
 
 const text = z.string().max(10000);
 const id = z
@@ -35,6 +36,7 @@ export const attachmentSchema = z.object({
 export const projectSchema = z.object({
   ...named,
   key: z.string().regex(/^[A-Z0-9-]{1,30}$/),
+  repositoryUrl: repositoryUrlSchema.optional(),
   icon: z.string().regex(/^[a-z0-9-]+$/),
   color: z.string().regex(/^[a-z]+$/),
   status: z.enum(['planning', 'active', 'hold', 'complete', 'risk']),
