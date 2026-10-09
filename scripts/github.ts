@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { z } from 'zod';
+import { importedTaskText } from '../shared/import-text';
 import { repositoryUrlSchema } from '../shared/repository';
 import { importEntitySchema, type ImportBatch } from '../shared/imports';
 const exec = promisify(execFile);
@@ -49,7 +50,7 @@ export function mapGithubIssue(
         subtasks: [],
         attachments: [],
         deps: [],
-        desc: `${issue.body || ''}\n\nSource: ${issue.html_url}`.trim(),
+        desc: importedTaskText(`${issue.body || ''}\n\nSource: ${issue.html_url}`.trim()),
         estimate: null,
         created,
         updated,

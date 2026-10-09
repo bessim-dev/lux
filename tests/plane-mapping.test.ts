@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { mapPlane, planeExportSchema, planeWorkspaceSchema } from '../scripts/plane';
+import { importedTaskText } from '../shared/import-text';
 import { mapGithubIssue } from '../scripts/github';
 const source = () =>
   planeExportSchema.parse({
@@ -54,6 +55,12 @@ describe('source mapping', () => {
     expect(result.pullRequestLinks).toEqual([{ task: 'plane_t_t1', url: 'https://github.com/org/repo/pull/2' }]);
     expect(result.warnings).toHaveLength(1);
     expect(mapPlane(source(), 'owner', new Map([['u1', 'owner']]))).toEqual(result);
+  });
+  test('preserves source code samples as literal text without app action hooks', () => {
+    const text = importedTaskText('<button data-a="deleteTask">Example</button>\nNext line');
+    expect(text).not.toContain('<button');
+    expect(text).toContain('&lt;button data-a=&quot;deleteTask&quot;&gt;');
+    expect(text).toContain('<br>Next line');
   });
   test('keeps custom workflow names visible and maps review stages to Review', () => {
     const input = source();

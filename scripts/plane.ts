@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { importedTaskText } from '../shared/import-text';
 import { parsePullRequestUrl } from '../shared/pull-requests';
 import { importEntitySchema, type ImportBatch } from '../shared/imports';
 
@@ -299,7 +300,7 @@ export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap
             subtasks: [],
             attachments: [],
             deps: [],
-            desc: source.description_stripped || plain(source.description_html || ''),
+            desc: importedTaskText(source.description_stripped || plain(source.description_html || '')),
             estimate: null,
             created: time(source.created_at),
             updated: time(source.updated_at),
