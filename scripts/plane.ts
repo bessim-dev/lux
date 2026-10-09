@@ -11,7 +11,7 @@ const project = z
     name: z.string(),
     identifier: z.string(),
     description: z.string().nullable().optional(),
-    network: z.number(),
+    network: z.union([z.literal(0), z.literal(2)]),
     archived_at: timestamp,
   })
   .passthrough();
@@ -50,8 +50,10 @@ const comment = z
 export const planeExportSchema = z.object({
   version: z.literal(1),
   source: z.literal('https://plane.reotech.org'),
-  workspace: z.literal('reotech_internal'),
+  workspace: z.enum(['reotech_internal', 'alb']),
   exportedAt: z.string(),
+  complete: z.boolean().default(true),
+  completedProjects: z.array(z.string()).default([]),
   members: z.array(member),
   projects: z.array(
     z.object({
@@ -73,8 +75,15 @@ const page = z.object({
   total_results: z.number().optional(),
 });
 
-export async function exportPlane(apiKey: string, legacy: boolean): Promise<PlaneExport> {
-  const root = 'https://plane.reotech.org/api/v1/workspaces/reotech_internal/';
+export const planeWorkspaceSchema = z.enum(['reotech_internal', 'alb']);
+export async function exportPlane(
+  apiKey: string,
+  legacy: boolean,
+  workspace: z.infer<typeof planeWorkspaceSchema> = 'reotech_internal',
+  options: { resume?: PlaneExport; checkpoint?: (snapshot: PlaneExport) => Promise<void> } = {},
+): Promise<PlaneExport> {
+  planeWorkspaceSchema.parse(workspace);
+  const root = `https://plane.reotech.org/api/v1/workspaces/${workspace}/`;
   async function request(path: string): Promise<unknown> {
     for (let attempt = 0; attempt < 4; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 1200));
@@ -107,39 +116,61 @@ export async function exportPlane(apiKey: string, legacy: boolean): Promise<Plan
   }
   const members = z.array(member).parse(await list('members/'));
   const projects = z.array(project.pick({ id: true })).parse(await list('projects/'));
-  const output: PlaneExport = {
-    version: 1,
-    source: 'https://plane.reotech.org',
-    workspace: 'reotech_internal',
-    exportedAt: new Date().toISOString(),
-    members,
-    projects: [],
+  if (options.resume && (options.resume.workspace !== workspace || options.resume.source !== 'https://plane.reotech.org' || options.resume.complete))
+    throw new Error('Resume needs an unfinished checkpoint for this source workspace.');
+  const output: PlaneExport = options.resume
+    ? planeExportSchema.parse(options.resume)
+    : {
+        version: 1,
+        source: 'https://plane.reotech.org',
+        workspace,
+        exportedAt: new Date().toISOString(),
+        complete: false,
+        completedProjects: [],
+        members,
+        projects: [],
+      };
+  const checkpoint = async () => {
+    if (options.checkpoint) await options.checkpoint(planeExportSchema.parse(output));
   };
+  await checkpoint();
   for (const item of projects) {
+    if (output.completedProjects.includes(item.id)) continue;
     const base = `projects/${item.id}/`,
       issuePath = base + (legacy ? 'issues/' : 'work-items/');
-    const detail = project.parse(await request(base));
-    const states = z.array(state).parse(await list(base + 'states/'));
-    const labels = z.array(label).parse(await list(base + 'labels/'));
-    const projectMembers = z.array(z.object({ id: z.string() }).passthrough()).parse(await list(base + 'members/'));
-    const tasks = z.array(task).parse(await list(issuePath));
-    const entries: PlaneExport['projects'][number]['tasks'] = [];
-    for (const item of tasks) {
-      const comments = z.array(comment).parse(await list(issuePath + item.id + '/comments/'));
-      const attachments = await list(issuePath + item.id + (legacy ? '/issue-attachments/' : '/attachments/'));
-      const links = await list(issuePath + item.id + '/' + 'links/');
-      entries.push({ task: item, comments, attachments, links });
+    let bundle = output.projects.find(p => p.project.id === item.id);
+    if (!bundle) {
+      bundle = {
+        project: project.parse(await request(base)),
+        states: z.array(state).parse(await list(base + 'states/')),
+        labels: z.array(label).parse(await list(base + 'labels/')),
+        members: z.array(z.object({ id: z.string() }).passthrough()).parse(await list(base + 'members/')),
+        tasks: [],
+        cycles: await list(base + 'cycles/'),
+        modules: await list(base + 'modules/'),
+      };
+      output.projects.push(bundle);
+      await checkpoint();
     }
-    output.projects.push({
-      project: detail,
-      states,
-      labels,
-      members: projectMembers,
-      tasks: entries,
-      cycles: await list(base + 'cycles/'),
-      modules: await list(base + 'modules/'),
-    });
+    const tasks = z.array(task).parse(await list(issuePath));
+    const completed = new Set(bundle.tasks.map(entry => entry.task.id));
+    for (const task of tasks) {
+      if (completed.has(task.id)) continue;
+      const comments = z.array(comment).parse(await list(issuePath + task.id + '/comments/'));
+      const attachments = await list(issuePath + task.id + (legacy ? '/issue-attachments/' : '/attachments/'));
+      const links = await list(issuePath + task.id + '/links/');
+      bundle.tasks.push({ task, comments, attachments, links });
+      if (bundle.tasks.length % 10 === 0) {
+        console.error(`${bundle.project.identifier}: exported ${bundle.tasks.length}/${tasks.length} items`);
+        await checkpoint();
+      }
+    }
+    output.completedProjects.push(item.id);
+    console.error(`${bundle.project.identifier}: export complete, ${bundle.tasks.length} items`);
+    await checkpoint();
   }
+  output.complete = true;
+  await checkpoint();
   return planeExportSchema.parse(output);
 }
 
@@ -160,10 +191,11 @@ function plain(value: string): string {
     .trim();
 }
 export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap<string, string>) {
+  if (!input.complete) throw new Error('Cannot plan an unfinished source export. Resume the export first.');
   const records: ImportBatch['records'] = [],
     warnings: string[] = [],
     pullRequestLinks: Array<{ task: string; url: string }> = [];
-  const status: Record<string, 'backlog' | 'todo' | 'progress' | 'done'> = {
+  const status: Record<string, 'backlog' | 'todo' | 'progress' | 'review' | 'done'> = {
     backlog: 'backlog',
     unstarted: 'todo',
     started: 'progress',
@@ -173,6 +205,20 @@ export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap
   for (const bundle of input.projects) {
     const source = bundle.project,
       projectId = 'plane_p_' + source.id;
+    const canonical: Record<string, string[]> = {
+      backlog: ['backlog'],
+      unstarted: ['todo'],
+      started: ['inprogress', 'started'],
+      completed: ['done', 'completed'],
+      cancelled: ['cancelled', 'canceled'],
+    };
+    const customStates = new Set(
+      bundle.states.filter(state => !canonical[state.group]?.includes(state.name.toLowerCase().replace(/[^a-z]/g, ''))).map(state => state.id),
+    );
+    for (const state of bundle.states.filter(state => customStates.has(state.id)))
+      warnings.push(
+        `${source.identifier}: custom state "${state.name}" mapped to ${state.group === 'started' && /review|validation/i.test(state.name) ? 'review' : status[state.group] || 'unsupported'}; original state retained as an imported-state label.`,
+      );
     if (bundle.cycles.length || bundle.modules.length)
       warnings.push(`${source.identifier}: ${bundle.cycles.length} cycles and ${bundle.modules.length} modules retained in export only.`);
     records.push({
@@ -226,6 +272,8 @@ export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap
         if (!name) throw new Error('Unmapped label.');
         return name;
       });
+      if (customStates.has(state.id)) labels.push(`Imported state: ${state.name}`);
+      const mappedStatus = state.group === 'started' && /review|validation/i.test(state.name) ? 'review' : status[state.group];
       records.push({
         sourceId: source.id,
         raw: JSON.stringify(source),
@@ -236,7 +284,7 @@ export function mapPlane(input: PlaneExport, owner: string, members: ReadonlyMap
             project: projectId,
             key: `${bundle.project.identifier}-${source.sequence_id}`,
             title: source.name,
-            status: status[state.group],
+            status: mappedStatus,
             assignee: assignee || null,
             priority: source.priority,
             due: source.target_date || null,

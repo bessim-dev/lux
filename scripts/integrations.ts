@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { makeFunctionReference } from 'convex/server';
 import { agentWorkspaceSchema } from '../shared/agent';
 import { importBatchSchema, type ImportBatch } from '../shared/imports';
-import { planeExportSchema, exportPlane, mapPlane } from './plane';
+import { planeExportSchema, planeWorkspaceSchema, exportPlane, mapPlane } from './plane';
 import { exportGithub, mapGithubIssue } from './github';
 import { loadCredential } from '../agent/credentials';
 
@@ -24,6 +24,8 @@ const { values, positionals } = parseArgs({
     project: { type: 'string' },
     'project-key': { type: 'string' },
     legacy: { type: 'boolean' },
+    'source-workspace': { type: 'string' },
+    'resume-export': { type: 'string' },
     apply: { type: 'boolean' },
   },
 });
@@ -61,7 +63,10 @@ async function main() {
     case 'plane-export': {
       const key = process.env.PLANE_API_KEY;
       if (!key) throw new Error('PLANE_API_KEY must be set in the process environment.');
-      const result = await exportPlane(key, !!values.legacy);
+      const result = await exportPlane(key, !!values.legacy, planeWorkspaceSchema.parse(values['source-workspace'] ?? 'reotech_internal'), {
+        resume: values['resume-export'] ? planeExportSchema.parse(await json(values['resume-export'])) : undefined,
+        checkpoint: save,
+      });
       await save(result);
       console.log(
         JSON.stringify({ projects: result.projects.length, tasks: result.projects.reduce((n, p) => n + p.tasks.length, 0), export: required('out') }),

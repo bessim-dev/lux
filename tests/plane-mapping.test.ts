@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { mapPlane, planeExportSchema } from '../scripts/plane';
+import { mapPlane, planeExportSchema, planeWorkspaceSchema } from '../scripts/plane';
 import { mapGithubIssue } from '../scripts/github';
 const source = () =>
   planeExportSchema.parse({
@@ -54,6 +54,23 @@ describe('source mapping', () => {
     expect(result.pullRequestLinks).toEqual([{ task: 'plane_t_t1', url: 'https://github.com/org/repo/pull/2' }]);
     expect(result.warnings).toHaveLength(1);
     expect(mapPlane(source(), 'owner', new Map([['u1', 'owner']]))).toEqual(result);
+  });
+  test('keeps custom workflow names visible and maps review stages to Review', () => {
+    const input = source();
+    input.projects[0]!.states[0] = { id: 's1', name: 'QA Review', group: 'started' };
+    const result = mapPlane(input, 'owner', new Map([['u1', 'owner']]));
+    expect(result.records[1]?.entity.value).toMatchObject({ status: 'review', labels: ['bug', 'Imported state: QA Review'] });
+    expect(result.warnings.some(warning => warning.includes('QA Review'))).toBe(true);
+  });
+  test('accepts only explicitly supported source workspaces', () => {
+    expect(planeWorkspaceSchema.parse('alb')).toBe('alb');
+    expect(planeWorkspaceSchema.parse('reotech_internal')).toBe('reotech_internal');
+    expect(planeWorkspaceSchema.safeParse('tt').success).toBe(false);
+  });
+  test('rejects partial exports before constructing an import plan', () => {
+    const partial = source();
+    partial.complete = false;
+    expect(() => mapPlane(partial, 'owner', new Map([['u1', 'owner']]))).toThrow('unfinished');
   });
   test('blocks unmapped states, labels, assignees, and comment authors before any destination writes', () => {
     expect(() => mapPlane(source(), 'owner', new Map())).toThrow('assignee');

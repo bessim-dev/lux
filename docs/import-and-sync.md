@@ -14,10 +14,10 @@ Members must already exist in Lux. Create/claim invitations through the normal m
 
 ## Plane commands
 
-The exporter is pinned to `https://plane.reotech.org` / `reotech_internal`. It reads the API key only from `PLANE_API_KEY` in the process environment. Never put it in an argument, URL, frontend configuration, plan, or repository. The official Plane MCP can discover projects, states, and members; its modern work-item routes returned 404 on the installed CE instance during verification. `--legacy` selects the verified older `/issues/`, `/issue-attachments/`, and `/links/` routes. Reads are paced, follow cursors, and have bounded 429 retry handling. Other HTTP errors stop the export.
+The exporter is pinned to `https://plane.reotech.org`, with explicit `reotech_internal` and `alb` workspace selection. It defaults to REOTECH. ALB must be selected with `--source-workspace alb`, never inferred from a connector's environment. It reads the API key only from `PLANE_API_KEY` in the process environment. Never put it in an argument, URL, frontend configuration, plan, or repository. The official Plane MCP can discover projects, states, and members; its modern work-item routes returned 404 on the installed CE instance during verification. `--legacy` selects the verified older `/issues/`, `/issue-attachments/`, and `/links/` routes. Reads are paced, follow cursors, and have bounded 429 retry handling. Other HTTP errors stop the export. The output file checkpoints each project and every ten items with `complete: false`; the planner rejects unfinished exports. Resume a failed read with `--resume-export /private/plane-export.json` and the same source workspace/output. Completed projects/items are reused, so a checkpoint resume is a continuing live snapshot, not an atomic source backup. Start a fresh export to capture subsequent source edits.
 
 ```sh
-npm run integrations -- plane-export --legacy --out /private/plane-export.json
+npm run integrations -- plane-export --source-workspace reotech_internal --legacy --out /private/plane-export.json
 npm run integrations -- plane-plan --export /private/plane-export.json \
   --owner LUX_OWNER_MEMBER_ID --member-map /private/member-map.json \
   --out /private/plane-plan.json
@@ -33,7 +33,7 @@ npm run integrations -- apply --plan /private/plane-plan.json --apply \
 
 Use the existing short-lived Clerk JWT credential format in [MCP setup](mcp-setup.md). A credential must match the requested instance. Normal browser identity and authorization apply. Deployment/admin keys are not user credentials.
 
-The slice imports projects, active endpoint work items, comments with mapped authors, labels, dates, descriptions as plain text, single assignees, and supported PR URL references. It retains rich descriptions/source fields in provenance. Cycles, modules, pages, custom fields, estimates, additional assignees, parent/dependency relationships, reactions, generic links, and attachment bytes are not reconstructed as native Lux features. Available cycles/modules/links/attachment metadata stay in the export. Archived-item and workspace-page inventory is not established by this exporter. Warnings describe encountered representational losses; absence of a warning does not prove full migration coverage.
+The slice imports projects, active endpoint work items, comments with mapped authors, labels, dates, descriptions as plain text, single assignees, and supported PR URL references. It retains rich descriptions/source fields in provenance. Custom workflow names are retained as `Imported state:` labels; started stages named review/validation map to Lux Review, and other groups map to their native equivalent. This does not reconstruct a custom workflow state machine. Cycles, modules, pages, custom fields, estimates, additional assignees, parent/dependency relationships, reactions, generic links, and attachment bytes are not reconstructed as native Lux features. Available cycles/modules/links/attachment metadata stay in the export. Archived-item and workspace-page inventory is not established by this exporter. Warnings describe encountered representational losses; absence of a warning does not prove full migration coverage.
 
 ## GitHub commands
 
