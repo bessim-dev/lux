@@ -62,6 +62,8 @@ Task drawers support adding, removing, and opening GitHub and Forgejo PR URL ref
 
 The read-only MCP foundation adds a reusable TypeScript package, local Lux connector, repository bindings, and a thin Claude plugin. See [MCP setup](docs/mcp-setup.md), [Shared package and authentication boundaries](docs/shared-mcp-foundation.md), and [Hosting findings](docs/mcp-hosting.md). Plane import and explicit provider pulls are described in [Import and sync](docs/import-and-sync.md). Hosted Lux OAuth, write tools, and automatic provider sync remain subsequent work in [Agent access and Plane migration](docs/agent-integration-plan.md), [GitHub and Forgejo connections](docs/git-integration-plan.md), and [Research findings](docs/integration-research.md).
 
+To build another application's connector with the same kit, use the [MCP adapter guide and portable skill](docs/mcp-adapter-guide.md).
+
 ## Checks
 
 ```sh
